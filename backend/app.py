@@ -999,7 +999,10 @@ async def get_prices(
 ):
     """Get ticket prices"""
     today = date.today()
-    query = db.query(TrainStationTicketPrice)
+    query = db.query(TrainStationTicketPrice).options(
+        joinedload(TrainStationTicketPrice.origin_station_rel),
+        joinedload(TrainStationTicketPrice.destination_station_rel)
+    )
 
     if origin:
         query = query.filter(TrainStationTicketPrice.origin_station_id == origin)
@@ -1015,7 +1018,7 @@ async def get_prices(
                 TrainStationTicketPrice.effective_to >= today
             )
         )
-    ).offset(skip).limit(limit).all()
+    ).all()
 
     # Add station names to each price
     result = []
