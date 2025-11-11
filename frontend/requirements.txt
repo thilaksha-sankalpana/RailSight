@@ -1,0 +1,22 @@
+# TCDAFS Frontend Requirements
+# Install with: pip install -r frontend/requirements.txt
+
+# Dash Framework
+dash>=2.14.0
+dash-bootstrap-components>=1.5.0
+
+# Data Visualization
+plotly>=5.17.0
+
+# HTTP Requests
+requests>=2.31.0
+
+# Data Processing
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Flask (included with Dash but specified for clarity)
+Flask>=3.0.0
+
+# Optional: Development tools
+pytest>=7.4.0

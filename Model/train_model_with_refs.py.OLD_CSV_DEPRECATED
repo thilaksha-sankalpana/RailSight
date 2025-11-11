@@ -1,0 +1,333 @@
+r"""
+Train Model with References (TCDAFS) - Extended features + LightGBM + early stopping
+
+Place this file at: tcdafs-project/model/train_model_with_refs.py
+
+It expects CSVs in the data/ folder:
+ - data/tickets.csv
+ - data/trains.csv
+ - data/routes.csv
+ - data/train_models.csv
+ - data/compartments.csv
+ - data/holidays.csv
+
+Run:
+    .\.venv\Scripts\Activate
+    python model\train_model_with_refs.py
+"""
+
+import os
+import pandas as pd
+import numpy as np
+from datetime import timedelta
+import joblib
+
+# sklearn
+from sklearn.pipeline import Pipeline
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import OrdinalEncoder, StandardScaler
+from sklearn.impute import SimpleImputer
+from sklearn.metrics import mean_absolute_error, mean_squared_error
+
+# LightGBM
+from lightgbm import LGBMRegressor, early_stopping, log_evaluation
+
+# For reproducibility
+RANDOM_STATE = 42
+
+# === PATHS ===
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))  # project root
+DATA_DIR = os.path.join(BASE_DIR, "data")
+MODEL_DIR = os.path.join(BASE_DIR, "model_artifacts")
+os.makedirs(MODEL_DIR, exist_ok=True)
+MODEL_PATH = os.path.join(MODEL_DIR, "best_model.joblib")
+
+# CSV files expected
+TICKETS_CSV = os.path.join(DATA_DIR, "tickets.csv")
+TRAINS_CSV = os.path.join(DATA_DIR, "trains.csv")
+ROUTES_CSV = os.path.join(DATA_DIR, "routes.csv")
+TRAIN_MODELS_CSV = os.path.join(DATA_DIR, "train_models.csv")
+COMPARTMENTS_CSV = os.path.join(DATA_DIR, "compartments.csv")
+HOLIDAYS_CSV = os.path.join(DATA_DIR, "holidays.csv")
+
+
+# --------------------------
+# Helpers for feature creation
+# --------------------------
+def nearest_holiday_days(dates_series, holidays_dates):
+    """
+    For a pandas Series of datelike (pd.Timestamp), return an array with
+    days to the nearest holiday (0 if that date is a holiday).
+    """
+    holidays_set = set(pd.to_datetime(holidays_dates).dt.date)
+    out = []
+    for dt in pd.to_datetime(dates_series):
+        d = dt.date()
+        if d in holidays_set:
+            out.append(0)
+            continue
+        max_search = 30
+        found = None
+        for i in range(1, max_search + 1):
+            if (d - timedelta(days=i)) in holidays_set or (d + timedelta(days=i)) in holidays_set:
+                found = i
+                break
+        out.append(found if found is not None else max_search)
+    return np.array(out)
+
+
+# --------------------------
+# Load raw tables
+# --------------------------
+def load_tables():
+    print("📥 Loading CSV files from:", DATA_DIR)
+    tickets = pd.read_csv(TICKETS_CSV, parse_dates=["travel_date", "booking_time"])
+    trains = pd.read_csv(TRAINS_CSV)
+    routes = pd.read_csv(ROUTES_CSV)
+    train_models = pd.read_csv(TRAIN_MODELS_CSV)
+    compartments = pd.read_csv(COMPARTMENTS_CSV)
+    holidays = pd.read_csv(HOLIDAYS_CSV, parse_dates=["holiday_date"])
+    print("✅ Loaded CSVs.")
+    return tickets, trains, routes, train_models, compartments, holidays
+
+
+# --------------------------
+# Build aggregated feature table
+# --------------------------
+def build_feature_table(tickets, trains, routes, train_models, compartments, holidays):
+    """
+    Returns a DataFrame with one row per (train_id, compartment_id, travel_date) and features.
+    """
+    print("🔗 Joining tables and aggregating daily passenger counts...")
+
+    # join tickets -> trains -> compartments (to get compartment_id) -> routes / train_models if needed
+    df = tickets.merge(trains, on="train_id", how="left")
+    df = df.merge(compartments, left_on=["train_id", "compartment_label"], right_on=["train_id", "compartment_label"], how="left")
+    df = df.merge(routes, on="route_id", how="left")
+    df = df.merge(train_models, on="train_model_id", how="left")
+
+    # aggregate to daily totals
+    agg = df.groupby(["train_id", "compartment_id", "route_id", "train_model_id", "travel_date"], as_index=False)["passengers"].sum()
+
+    # bring capacity
+    agg = agg.merge(compartments[["compartment_id", "capacity"]], on="compartment_id", how="left")
+
+    # booking lead time median per day
+    df["booking_lead_days"] = (pd.to_datetime(df["travel_date"]) - pd.to_datetime(df["booking_time"])).dt.days.clip(lower=0)
+    lead_agg = df.groupby(["train_id", "compartment_id", "travel_date"], as_index=False)["booking_lead_days"].median().rename(columns={"booking_lead_days": "booking_lead_time"})
+    agg = agg.merge(lead_agg, on=["train_id", "compartment_id", "travel_date"], how="left")
+
+    # holidays flags
+    holidays_dates = holidays["holiday_date"]
+    agg["is_holiday"] = agg["travel_date"].dt.date.isin(set(holidays_dates.dt.date)).astype(int)
+    hol_lookup = holidays.set_index(holidays["holiday_date"].dt.date)["name"].to_dict()
+    agg["holiday_name"] = agg["travel_date"].dt.date.map(hol_lookup).fillna("None")
+
+    # time features
+    agg["day_of_week"] = agg["travel_date"].dt.dayofweek
+    agg["month"] = agg["travel_date"].dt.month
+    agg["year"] = agg["travel_date"].dt.year
+    agg["is_weekend"] = agg["day_of_week"].isin([5, 6]).astype(int)
+
+    # days to nearest holiday
+    agg["days_to_nearest_holiday"] = nearest_holiday_days(agg["travel_date"], holidays_dates)
+
+    # Lag and rolling mean per series
+    rows = []
+    for (t, c), g in agg.groupby(["train_id", "compartment_id"]):
+        g = g.sort_values("travel_date").copy()
+        g["lag_1"] = g["passengers"].shift(1)
+        g["lag_7"] = g["passengers"].shift(7)
+        g["rolling_mean_7"] = g["passengers"].rolling(7, min_periods=1).mean().shift(1)
+        g["last_day_utilization"] = g["lag_1"] / g["capacity"]
+        rows.append(g)
+    feat = pd.concat(rows, ignore_index=True)
+
+    # require at least lag_1
+    feat = feat.dropna(subset=["lag_1"]).reset_index(drop=True)
+
+    # small-dataset safety
+    feat["lag_7"] = feat["lag_7"].fillna(feat["lag_1"])
+
+    print(f"✅ Built feature table: {len(feat)} rows, {len(feat.columns)} columns")
+    return feat
+
+
+# --------------------------
+# Train LightGBM pipeline with early stopping
+# --------------------------
+def train_and_save(feat):
+    print("⚙️ Training LightGBM with preprocessing + early stopping...")
+
+    categorical_cols = ["route_id", "train_model_id", "holiday_name", "is_weekend"]
+    numeric_cols = [
+        "day_of_week", "month", "year",
+        "lag_1", "lag_7", "rolling_mean_7",
+        "capacity", "booking_lead_time",
+        "days_to_nearest_holiday", "last_day_utilization", "is_holiday"
+    ]
+    feature_cols = categorical_cols + numeric_cols
+    target = "passengers"
+
+    feat = feat.sort_values("travel_date").reset_index(drop=True)
+    X = feat[feature_cols]
+    y = feat[target]
+
+    # time split
+    split_index = int(len(feat) * 0.8) if len(feat) >= 5 else max(1, int(len(feat) * 0.5))
+    X_train, X_val = X.iloc[:split_index].copy(), X.iloc[split_index:].copy()
+    y_train, y_val = y.iloc[:split_index].copy(), y.iloc[split_index:].copy()
+
+    # Preprocessing pipelines
+    cat_pipeline = Pipeline(steps=[
+        ("imputer", SimpleImputer(strategy="constant", fill_value=-999)),
+        ("ord", OrdinalEncoder(handle_unknown="use_encoded_value", unknown_value=-1))
+    ])
+    num_pipeline = Pipeline(steps=[
+        ("imputer", SimpleImputer(strategy="median")),
+        ("scaler", StandardScaler())
+    ])
+
+    preprocessor = ColumnTransformer(transformers=[
+        ("cat", cat_pipeline, categorical_cols),
+        ("num", num_pipeline, numeric_cols)
+    ])
+
+    # Fit preprocessor and transform
+    X_train_trans = preprocessor.fit_transform(X_train)
+    X_val_trans = preprocessor.transform(X_val)
+
+    # LightGBM regressor with callbacks for early stopping (modern LightGBM API)
+    lgb_params = {
+        "n_estimators": 1000,
+        "learning_rate": 0.05,
+        "random_state": RANDOM_STATE,
+        "n_jobs": -1
+    }
+    model = LGBMRegressor(**lgb_params)
+
+    # Use callbacks for early stopping and silence per-iteration logs
+    model.fit(
+        X_train_trans, y_train,
+        eval_set=[(X_val_trans, y_val)],
+        callbacks=[early_stopping(50), log_evaluation(0)]
+    )
+
+    # Evaluate
+    preds_val = model.predict(X_val_trans)
+    mae = mean_absolute_error(y_val, preds_val)
+    rmse = float(np.sqrt(mean_squared_error(y_val, preds_val)))
+    print(f"📊 VAL MAE: {mae:.2f}, RMSE: {rmse:.2f}")
+
+    # Final pipeline
+    final_pipeline = Pipeline(steps=[
+        ("preprocessor", preprocessor),
+        ("model", model)
+    ])
+
+    joblib.dump(final_pipeline, MODEL_PATH)
+    print(f"✅ Saved pipeline to: {MODEL_PATH}")
+    return final_pipeline
+
+
+# --------------------------
+# Safe predict helper
+# --------------------------
+def safe_predict(pipeline, feat_row):
+    """
+    pipeline: loaded final_pipeline (preprocessor+model)
+    feat_row: DataFrame with same feature columns used in training (single row)
+    """
+    # retrieve feature order from the pipeline transformers
+    cat_cols = pipeline.named_steps["preprocessor"].transformers_[0][2]
+    num_cols = pipeline.named_steps["preprocessor"].transformers_[1][2]
+    cols = list(cat_cols) + list(num_cols)
+    feat_row = feat_row[cols].copy()
+    pred = pipeline.predict(feat_row)[0]
+    cap = feat_row.iloc[0].get("capacity", None)
+    try:
+        cap_val = float(cap)
+        if cap_val > 0:
+            pred = min(pred, cap_val * 1.2)
+    except Exception:
+        pass
+    pred = max(0.0, pred)
+    return round(float(pred), 2)
+
+
+# --------------------------
+# Build feature row for a target date
+# --------------------------
+def build_feature_row_for_prediction(feat, train_id, compartment_id, target_date, holidays):
+    if isinstance(target_date, str):
+        target_date = pd.to_datetime(target_date).date()
+    series = feat[(feat["train_id"] == train_id) & (feat["compartment_id"] == compartment_id)].sort_values("travel_date")
+    if series.empty:
+        raise ValueError("No history for this train+compartment")
+    last = series.iloc[-1]
+
+    lag_1 = last["passengers"]
+    lag_7 = series["passengers"].iloc[-7] if len(series) >= 7 else lag_1
+    rolling_mean_7 = float(series["passengers"].tail(7).mean())
+
+    capacity = last.get("capacity", np.nan)
+    route_id = int(last["route_id"])
+    train_model_id = int(last["train_model_id"])
+
+    booking_lead_time = float(series["booking_lead_time"].median() if "booking_lead_time" in series.columns else np.nan)
+
+    holidays_set = set(holidays["holiday_date"].dt.date)
+    is_holiday = 1 if target_date in holidays_set else 0
+    hol_lookup = holidays.set_index(holidays["holiday_date"].dt.date)["name"].to_dict()
+    holiday_name = hol_lookup.get(target_date, "None")
+
+    dow = pd.to_datetime(target_date).dayofweek
+    month = pd.to_datetime(target_date).month
+    year = pd.to_datetime(target_date).year
+    is_weekend = 1 if dow in (5, 6) else 0
+    days_to_nearest = int(nearest_holiday_days([pd.to_datetime(target_date)], holidays["holiday_date"])[0])
+
+    last_day_util = (lag_1 / capacity) if (pd.notna(capacity) and capacity != 0) else 0.0
+
+    row = pd.DataFrame([{
+        "route_id": route_id,
+        "train_model_id": train_model_id,
+        "holiday_name": holiday_name,
+        "is_weekend": is_weekend,
+        "day_of_week": dow,
+        "month": month,
+        "year": year,
+        "lag_1": lag_1,
+        "lag_7": lag_7,
+        "rolling_mean_7": rolling_mean_7,
+        "capacity": capacity,
+        "booking_lead_time": booking_lead_time,
+        "days_to_nearest_holiday": days_to_nearest,
+        "last_day_utilization": last_day_util,
+        "is_holiday": is_holiday
+    }])
+    return row
+
+
+# --------------------------
+# MAIN
+# --------------------------
+if __name__ == "__main__":
+    print("🚂 Starting TCDAFS training (extended features + LightGBM)...")
+    tickets, trains, routes, train_models, compartments, holidays = load_tables()
+    feat = build_feature_table(tickets, trains, routes, train_models, compartments, holidays)
+    pipeline = train_and_save(feat)
+
+    # Example prediction
+    try:
+        sample = feat.sort_values("travel_date").iloc[-1]
+        train_id = int(sample["train_id"])
+        comp_id = int(sample["compartment_id"])
+        future_date = (sample["travel_date"] + timedelta(days=7)).date()
+        feat_row = build_feature_row_for_prediction(feat, train_id, comp_id, future_date, holidays)
+        predicted = safe_predict(pipeline, feat_row)
+        print(f"\n🔮 Example prediction for train_id={train_id}, compartment_id={comp_id}, {future_date}: {predicted} passengers")
+    except Exception as e:
+        print("Could not run example prediction:", e)
+
+    print("\n✅ Training complete. Pipeline saved to:", MODEL_PATH)

@@ -1,0 +1,8 @@
+.venv
+nul
+backend_debug.log
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
