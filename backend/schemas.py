@@ -363,6 +363,8 @@ class PriceResponse(BaseModel):
     id: int
     origin_station_id: str
     destination_station_id: str
+    origin_station_name: Optional[str] = None
+    destination_station_name: Optional[str] = None
     distance: Decimal
     first_class_fee: Decimal
     second_class_fee: Decimal

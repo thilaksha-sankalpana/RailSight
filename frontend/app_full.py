@@ -2262,8 +2262,8 @@ def ticket_pricing_layout():
                         "Bulk Import"
                     ], id="bulk-import-pricing-btn", color="secondary", outline=True, style={'marginRight': '12px'}),
                     dbc.Button([
-                        html.I(className="fas fa-plus", style={'marginRight': '8px'}),
-                        "Add New Price"
+                        html.I(className="fas fa-edit", style={'marginRight': '8px'}),
+                        "Update Price"
                     ], id="add-ticket-pricing-btn", style=BUTTON_PRIMARY)
                 ], style={'marginLeft': 'auto', 'display': 'flex', 'alignItems': 'center'})
             ], style={
@@ -2297,7 +2297,7 @@ def ticket_pricing_layout():
                                 searchable=True,
                                 clearable=True
                             ),
-                        ], width=5),
+                        ], width=4),
                         dbc.Col([
                             dbc.Label("Destination Station", style={'fontWeight': '500', 'marginBottom': '8px'}),
                             dcc.Dropdown(
@@ -2306,12 +2306,18 @@ def ticket_pricing_layout():
                                 searchable=True,
                                 clearable=True
                             ),
-                        ], width=5),
+                        ], width=4),
                         dbc.Col([
                             dbc.Button([
                                 html.I(className="fas fa-search", style={'marginRight': '8px'}),
                                 "Search"
-                            ], id="search-pricing-btn", style={**BUTTON_PRIMARY, 'marginTop': '28px', 'width': '100%'})
+                            ], id="search-pricing-btn", style={**BUTTON_PRIMARY, 'marginTop': '28px', 'width': '100%', 'marginBottom': '8px'})
+                        ], width=2),
+                        dbc.Col([
+                            dbc.Button([
+                                html.I(className="fas fa-eraser", style={'marginRight': '8px'}),
+                                "Clear Filter"
+                            ], id="clear-pricing-filter-btn", color="secondary", outline=True, style={'marginTop': '28px', 'width': '100%'})
                         ], width=2),
                     ])
                 ], style={'padding': '20px'})
@@ -4253,6 +4259,454 @@ def search_schedules_by_station(n_clicks, origin, destination, date, token):
     ])
 
     return results_content, f"Found {len(schedules)} schedules", True, "success"
+
+# ============= TICKET PRICING CALLBACKS =============
+@callback(
+    Output("ticket-pricing-table", "children"),
+    [Input("url", "pathname"),
+     Input("search-pricing-btn", "n_clicks")],
+    [State("token-store", "data"),
+     State("pricing-origin-station", "value"),
+     State("pricing-destination-station", "value")],
+    prevent_initial_call=False
+)
+def load_ticket_pricing(pathname, search_clicks, token, origin, destination):
+    """Load and display ticket pricing data"""
+    if pathname != "/pricing":
+        return no_update
+    
+    if not token:
+        return html.Div("Please log in to view pricing data", style={'padding': '20px', 'textAlign': 'center'})
+    
+    try:
+        response = make_api_request("/prices", token=token, method="GET")
+        
+        # Handle None (API error) vs empty list (no data)
+        if response is None:
+            return html.Div([
+                html.I(className="fas fa-exclamation-circle", style={'fontSize': '48px', 'color': COLORS['error'], 'marginBottom': '16px'}),
+                html.P("Failed to connect to API", style={'color': COLORS['error'], 'fontSize': '16px'}),
+                html.P("Please check if the backend server is running.", style={'color': COLORS['text_secondary'], 'fontSize': '14px'})
+            ], style={'textAlign': 'center', 'padding': '40px'})
+        
+        # The /prices endpoint returns a list directly
+        if isinstance(response, list):
+            prices = response
+        elif isinstance(response, dict) and response.get("success"):
+            prices = response.get("data", [])
+        else:
+            prices = []
+        
+        if not prices:
+            return html.Div([
+                html.I(className="fas fa-inbox", style={'fontSize': '48px', 'color': COLORS['text_secondary'], 'marginBottom': '16px'}),
+                html.P("No pricing data available", style={'color': COLORS['text_secondary'], 'fontSize': '16px', 'marginBottom': '8px'}),
+                html.P("Click 'Add New Price' to add ticket pricing entries.", style={'color': COLORS['text_secondary'], 'fontSize': '14px'})
+            ], style={'textAlign': 'center', 'padding': '40px'})
+        
+        # Filter if search was used
+        if origin or destination:
+            filtered_prices = []
+            for price in prices:
+                # Match by station_id (dropdown sends station_id as value)
+                origin_match = True
+                destination_match = True
+                
+                if origin:
+                    origin_match = (price.get('origin_station_id') == origin)
+                
+                if destination:
+                    destination_match = (price.get('destination_station_id') == destination)
+                
+                if origin_match and destination_match:
+                    filtered_prices.append(price)
+            
+            prices = filtered_prices
+            
+            # Show message if no results after filtering
+            if not prices:
+                # Fetch station names for display
+                origin_name = origin if origin else 'Any'
+                destination_name = destination if destination else 'Any'
+                
+                if origin:
+                    stations_response = make_api_request("/stations", token=token, method="GET")
+                    if stations_response:
+                        for s in stations_response:
+                            if s.get('station_id') == origin:
+                                origin_name = s.get('station_name', origin)
+                                break
+                
+                if destination:
+                    if not stations_response:
+                        stations_response = make_api_request("/stations", token=token, method="GET")
+                    if stations_response:
+                        for s in stations_response:
+                            if s.get('station_id') == destination:
+                                destination_name = s.get('station_name', destination)
+                                break
+                
+                return html.Div([
+                    html.I(className="fas fa-search", style={'fontSize': '48px', 'color': COLORS['text_secondary'], 'marginBottom': '16px'}),
+                    html.P("No pricing found for the selected route", style={'color': COLORS['text_secondary'], 'fontSize': '16px', 'marginBottom': '8px'}),
+                    html.P(f"Origin: {origin_name}, Destination: {destination_name}", 
+                           style={'color': COLORS['text_secondary'], 'fontSize': '14px', 'marginBottom': '8px'}),
+                    html.P("Try different stations or clear the filters.", style={'color': COLORS['text_secondary'], 'fontSize': '14px'})
+                ], style={'textAlign': 'center', 'padding': '40px'})
+        
+        # Create table data
+        table_data = []
+        for price in prices:
+            # Handle both 'id' and 'price_id' field names
+            price_id = price.get('id', price.get('price_id', 'N/A'))
+            
+            # Use station names if available, otherwise fall back to IDs
+            origin_display = price.get('origin_station_name', price.get('origin_station_id', 'N/A'))
+            destination_display = price.get('destination_station_name', price.get('destination_station_id', 'N/A'))
+            
+            table_data.append({
+                'ID': str(price_id),
+                'Origin Station': origin_display,
+                'Destination Station': destination_display,
+                'Distance (km)': f"{float(price.get('distance', 0)):,.2f}",
+                'First Class': f"LKR {float(price.get('first_class_fee', 0)):,.2f}",
+                'Second Class': f"LKR {float(price.get('second_class_fee', 0)):,.2f}",
+                'Third Class': f"LKR {float(price.get('third_class_fee', 0)):,.2f}",
+                'Effective From': str(price.get('effective_from', 'N/A')),
+                'Status': 'Active' if price.get('effective_to') is None else f"Expired on {price.get('effective_to')}"
+            })
+        
+        # Sort table data alphabetically by Origin Station, then by Destination Station
+        table_data.sort(key=lambda x: (x['Origin Station'], x['Destination Station']))
+        
+        return dash_table.DataTable(
+            data=table_data,
+            columns=[
+                {'name': 'ID', 'id': 'ID'},
+                {'name': 'Origin Station', 'id': 'Origin Station'},
+                {'name': 'Destination Station', 'id': 'Destination Station'},
+                {'name': 'Distance (km)', 'id': 'Distance (km)'},
+                {'name': 'First Class', 'id': 'First Class'},
+                {'name': 'Second Class', 'id': 'Second Class'},
+                {'name': 'Third Class', 'id': 'Third Class'},
+                {'name': 'Effective From', 'id': 'Effective From'},
+                {'name': 'Status', 'id': 'Status'},
+            ],
+            style_table={'overflowX': 'auto'},
+            style_cell={
+                'textAlign': 'left',
+                'padding': '12px',
+                'fontFamily': 'Roboto, sans-serif',
+                'fontSize': '14px',
+                'whiteSpace': 'normal',
+                'height': 'auto'
+            },
+            style_header={
+                'backgroundColor': COLORS['primary'],
+                'color': 'white',
+                'fontWeight': '600',
+                'border': 'none',
+                'textAlign': 'left'
+            },
+            style_data={
+                'border': f'1px solid {COLORS["border"]}'
+            },
+            style_data_conditional=[
+                {
+                    'if': {'row_index': 'odd'},
+                    'backgroundColor': '#f8f9fa'
+                },
+                {
+                    'if': {'state': 'selected'},
+                    'backgroundColor': f'{COLORS["primary"]}20',
+                    'border': f'1px solid {COLORS["primary"]}'
+                },
+                {
+                    'if': {
+                        'filter_query': '{Status} = "Active"',
+                        'column_id': 'Status'
+                    },
+                    'color': COLORS['success'],
+                    'fontWeight': '600'
+                }
+            ],
+            page_size=15,
+            sort_action='native',
+            filter_action='native'
+        )
+            
+    except Exception as e:
+        logger.error(f"Error loading pricing: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return html.Div([
+            html.I(className="fas fa-exclamation-triangle", style={'fontSize': '48px', 'color': COLORS['warning'], 'marginBottom': '16px'}),
+            html.P(f"Error: {str(e)}", style={'color': COLORS['error'], 'fontSize': '14px'})
+        ], style={'textAlign': 'center', 'padding': '40px'})
+
+@callback(
+    Output("pricing-origin-station", "options"),
+    Input("url", "pathname"),
+    State("token-store", "data"),
+    prevent_initial_call=False
+)
+def load_pricing_origin_stations(pathname, token):
+    """Load origin station options for pricing filters"""
+    if pathname != "/pricing" or not token:
+        return []
+    
+    try:
+        response = make_api_request("/stations", token=token)
+        logger.info(f"Stations response type: {type(response)}, value: {response[:2] if isinstance(response, list) and len(response) > 0 else response}")
+        
+        if response is not None:
+            # Handle both response formats
+            if isinstance(response, dict) and response.get("success"):
+                stations = response.get("data", [])
+            elif isinstance(response, list):
+                stations = response
+            else:
+                stations = []
+            
+            return [{"label": s.get("station_name", s.get("station_id")), "value": s.get("station_id")} 
+                    for s in stations]
+    except Exception as e:
+        logger.error(f"Error loading origin stations: {str(e)}")
+        import traceback
+        traceback.print_exc()
+    return []
+
+@callback(
+    Output("pricing-destination-station", "options"),
+    [Input("url", "pathname"),
+     Input("pricing-origin-station", "value")],
+    State("token-store", "data"),
+    prevent_initial_call=False
+)
+def load_pricing_destination_stations(pathname, origin, token):
+    """Load destination station options for pricing filters"""
+    if pathname != "/pricing" or not token:
+        return []
+    
+    try:
+        response = make_api_request("/stations", token=token)
+        if response:
+            # Handle both response formats
+            if isinstance(response, dict) and response.get("success"):
+                stations = response.get("data", [])
+            elif isinstance(response, list):
+                stations = response
+            else:
+                stations = []
+            
+            # Exclude origin if selected
+            options = [{"label": s.get("station_name", s.get("station_id")), "value": s.get("station_id")} 
+                      for s in stations if not origin or s.get("station_id") != origin]
+            return options
+    except Exception as e:
+        logger.error(f"Error loading stations: {str(e)}")
+    return []
+
+@callback(
+    Output("pricing-modal-origin", "options"),
+    Input("url", "pathname"),
+    State("token-store", "data"),
+    prevent_initial_call=False
+)
+def load_modal_origin_stations(pathname, token):
+    """Load origin station options for pricing modal"""
+    if pathname != "/pricing" or not token:
+        return []
+    
+    try:
+        response = make_api_request("/stations", token=token)
+        if response:
+            # Handle both response formats
+            if isinstance(response, dict) and response.get("success"):
+                stations = response.get("data", [])
+            elif isinstance(response, list):
+                stations = response
+            else:
+                stations = []
+            
+            return [{"label": s.get("station_name", s.get("station_id")), "value": s.get("station_id")} 
+                    for s in stations]
+    except Exception as e:
+        logger.error(f"Error loading stations: {str(e)}")
+    return []
+
+@callback(
+    Output("pricing-modal-destination", "options"),
+    Input("pricing-modal-origin", "value"),
+    State("token-store", "data"),
+    prevent_initial_call=False
+)
+def load_modal_destination_stations(origin, token):
+    """Load destination station options for pricing modal"""
+    if not token:
+        return []
+    
+    try:
+        response = make_api_request("/stations", token=token)
+        if response:
+            # Handle both response formats
+            if isinstance(response, dict) and response.get("success"):
+                stations = response.get("data", [])
+            elif isinstance(response, list):
+                stations = response
+            else:
+                stations = []
+            
+            # Exclude origin if selected
+            options = [{"label": s.get("station_name", s.get("station_id")), "value": s.get("station_id")} 
+                      for s in stations if not origin or s.get("station_id") != origin]
+            return options
+    except Exception as e:
+        logger.error(f"Error loading stations: {str(e)}")
+    return []
+
+@callback(
+    [Output("pricing-origin-station", "value"),
+     Output("pricing-destination-station", "value"),
+     Output("ticket-pricing-table", "children", allow_duplicate=True)],
+    Input("clear-pricing-filter-btn", "n_clicks"),
+    State("token-store", "data"),
+    prevent_initial_call=True
+)
+def clear_pricing_filters(n_clicks, token):
+    """Clear pricing filter dropdowns and reload all prices"""
+    if not token:
+        return None, None, html.Div("Please log in to view pricing data", style={'padding': '20px', 'textAlign': 'center'})
+    
+    try:
+        response = make_api_request("/prices", token=token, method="GET")
+        
+        # Handle None (API error) vs empty list (no data)
+        if response is None:
+            return None, None, html.Div([
+                html.I(className="fas fa-exclamation-circle", style={'fontSize': '48px', 'color': COLORS['error'], 'marginBottom': '16px'}),
+                html.P("Failed to connect to API", style={'color': COLORS['error'], 'fontSize': '16px'}),
+                html.P("Please check if the backend server is running.", style={'color': COLORS['text_secondary'], 'fontSize': '14px'})
+            ], style={'textAlign': 'center', 'padding': '40px'})
+        
+        # The /prices endpoint returns a list directly
+        if isinstance(response, list):
+            prices = response
+        elif isinstance(response, dict) and response.get("success"):
+            prices = response.get("data", [])
+        else:
+            prices = []
+        
+        if not prices:
+            return None, None, html.Div([
+                html.I(className="fas fa-inbox", style={'fontSize': '48px', 'color': COLORS['text_secondary'], 'marginBottom': '16px'}),
+                html.P("No pricing data available", style={'color': COLORS['text_secondary'], 'fontSize': '16px', 'marginBottom': '8px'}),
+                html.P("Click 'Update Price' to add ticket pricing entries.", style={'color': COLORS['text_secondary'], 'fontSize': '14px'})
+            ], style={'textAlign': 'center', 'padding': '40px'})
+        
+        # Create table data
+        table_data = []
+        for price in prices:
+            # Handle both 'id' and 'price_id' field names
+            price_id = price.get('id', price.get('price_id', 'N/A'))
+            
+            # Use station names if available, otherwise fall back to IDs
+            origin_display = price.get('origin_station_name', price.get('origin_station_id', 'N/A'))
+            destination_display = price.get('destination_station_name', price.get('destination_station_id', 'N/A'))
+            
+            table_data.append({
+                'ID': str(price_id),
+                'Origin Station': origin_display,
+                'Destination Station': destination_display,
+                'Distance (km)': f"{float(price.get('distance', 0)):,.2f}",
+                'First Class': f"LKR {float(price.get('first_class_fee', 0)):,.2f}",
+                'Second Class': f"LKR {float(price.get('second_class_fee', 0)):,.2f}",
+                'Third Class': f"LKR {float(price.get('third_class_fee', 0)):,.2f}",
+                'Effective From': str(price.get('effective_from', 'N/A')),
+                'Status': 'Active' if price.get('effective_to') is None else f"Expired on {price.get('effective_to')}"
+            })
+        
+        # Sort table data alphabetically by Origin Station, then by Destination Station
+        table_data.sort(key=lambda x: (x['Origin Station'], x['Destination Station']))
+        
+        pricing_table = dash_table.DataTable(
+            data=table_data,
+            columns=[
+                {'name': 'ID', 'id': 'ID'},
+                {'name': 'Origin Station', 'id': 'Origin Station'},
+                {'name': 'Destination Station', 'id': 'Destination Station'},
+                {'name': 'Distance (km)', 'id': 'Distance (km)'},
+                {'name': 'First Class', 'id': 'First Class'},
+                {'name': 'Second Class', 'id': 'Second Class'},
+                {'name': 'Third Class', 'id': 'Third Class'},
+                {'name': 'Effective From', 'id': 'Effective From'},
+                {'name': 'Status', 'id': 'Status'},
+            ],
+            style_table={'overflowX': 'auto'},
+            style_cell={
+                'textAlign': 'left',
+                'padding': '12px',
+                'fontFamily': 'Roboto, sans-serif',
+                'fontSize': '14px',
+                'whiteSpace': 'normal',
+                'height': 'auto'
+            },
+            style_header={
+                'backgroundColor': COLORS['primary'],
+                'color': 'white',
+                'fontWeight': '600',
+                'textAlign': 'left',
+                'padding': '12px',
+                'fontSize': '14px'
+            },
+            style_data_conditional=[
+                {
+                    'if': {'row_index': 'odd'},
+                    'backgroundColor': '#f8f9fa'
+                },
+                {
+                    'if': {'state': 'active'},
+                    'backgroundColor': f'{COLORS["primary"]}15',
+                    'border': f'1px solid {COLORS["primary"]}'
+                }
+            ],
+            page_size=10,
+            sort_action='native',
+            filter_action='native'
+        )
+        
+        return None, None, pricing_table
+        
+    except Exception as e:
+        logger.error(f"Error clearing pricing filters: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return None, None, html.Div([
+            html.I(className="fas fa-exclamation-triangle", style={'fontSize': '48px', 'color': COLORS['warning'], 'marginBottom': '16px'}),
+            html.P(f"Error loading pricing data: {str(e)}", style={'color': COLORS['error'], 'fontSize': '14px'})
+        ], style={'textAlign': 'center', 'padding': '40px'})
+
+@callback(
+    [Output("ticket-pricing-modal", "is_open"),
+     Output("ticket-pricing-modal-title", "children")],
+    [Input("add-ticket-pricing-btn", "n_clicks"),
+     Input("cancel-ticket-pricing-btn", "n_clicks"),
+     Input("save-ticket-pricing-btn", "n_clicks")],
+    State("ticket-pricing-modal", "is_open"),
+    prevent_initial_call=True
+)
+def toggle_pricing_modal(add_clicks, cancel_clicks, save_clicks, is_open):
+    """Toggle pricing add/edit modal"""
+    ctx = dash.callback_context
+    if not ctx.triggered:
+        return False, "Add New Pricing"
+    
+    button_id = ctx.triggered[0]["prop_id"].split(".")[0]
+    
+    if button_id == "add-ticket-pricing-btn":
+        return True, "Add New Pricing"
+    else:
+        return False, "Add New Pricing"
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=8050)

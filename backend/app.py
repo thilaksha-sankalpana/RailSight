@@ -17,7 +17,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Depends, status, Query
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, and_, or_, desc, text
 from sqlalchemy.exc import IntegrityError
 from dotenv import load_dotenv
@@ -995,23 +995,46 @@ async def delete_schedule(
 async def get_prices(
     origin: Optional[str] = Query(None),
     destination: Optional[str] = Query(None),
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, le=500),
     db: Session = Depends(get_db)
 ):
     """Get ticket prices"""
-    query = db.query(TrainStationTicketPrice)
+    query = db.query(TrainStationTicketPrice).options(
+        joinedload(TrainStationTicketPrice.origin_station_rel),
+        joinedload(TrainStationTicketPrice.destination_station_rel)
+    )
 
     if origin:
         query = query.filter(TrainStationTicketPrice.origin_station_id == origin)
     if destination:
         query = query.filter(TrainStationTicketPrice.destination_station_id == destination)
 
+    # Show active prices: effective_to is NULL OR effective_to is in the future
     prices = query.filter(
-        TrainStationTicketPrice.effective_to.is_(None)
-    ).offset(skip).limit(limit).all()
+        or_(
+            TrainStationTicketPrice.effective_to.is_(None),
+            TrainStationTicketPrice.effective_to >= date.today()
+        )
+    ).all()
 
-    return prices
+    # Add station names to each price
+    result = []
+    for price in prices:
+        price_dict = {
+            "id": price.id,
+            "origin_station_id": price.origin_station_id,
+            "destination_station_id": price.destination_station_id,
+            "origin_station_name": price.origin_station_rel.station_name if price.origin_station_rel else None,
+            "destination_station_name": price.destination_station_rel.station_name if price.destination_station_rel else None,
+            "distance": price.distance,
+            "first_class_fee": price.first_class_fee,
+            "second_class_fee": price.second_class_fee,
+            "third_class_fee": price.third_class_fee,
+            "effective_from": price.effective_from,
+            "effective_to": price.effective_to
+        }
+        result.append(price_dict)
+
+    return result
 
 @app.post("/tickets/calculate-price", response_model=PriceCalculationResponse)
 async def calculate_ticket_price(
@@ -1023,7 +1046,10 @@ async def calculate_ticket_price(
         and_(
             TrainStationTicketPrice.origin_station_id == request.origin_station_id,
             TrainStationTicketPrice.destination_station_id == request.destination_station_id,
-            TrainStationTicketPrice.effective_to.is_(None)
+            or_(
+                TrainStationTicketPrice.effective_to.is_(None),
+                TrainStationTicketPrice.effective_to >= date.today()
+            )
         )
     ).first()
 
