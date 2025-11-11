@@ -327,21 +327,59 @@ class CapacityService:
             SegmentCapacity.schedule_capacity_id == schedule_capacity_id
         ).order_by(SegmentCapacity.segment_order).all()
 
+        if not all_segments:
+            logger.warning(f"No segments found for schedule_capacity_id {schedule_capacity_id}")
+            return []
+
         overlapping = []
-        in_range = False
+        collecting = False
+
+        # Debug: Check if destination exists in any segment
+        destination_found_in_segments = any(
+            seg.destination_station_id == destination_station_id or 
+            seg.origin_station_id == destination_station_id 
+            for seg in all_segments
+        )
+        
+        if not destination_found_in_segments:
+            logger.error(
+                f"Destination {destination_station_id} not found in any segment! "
+                f"First segment: {all_segments[0].origin_station_id}→{all_segments[0].destination_station_id}, "
+                f"Last segment: {all_segments[-1].origin_station_id}→{all_segments[-1].destination_station_id}"
+            )
+            return []
 
         for segment in all_segments:
-            # Start collecting when we reach the origin station
-            if segment.origin_station_id == origin_station_id:
-                in_range = True
+            # Start collecting when we find the origin station
+            if not collecting:
+                if segment.origin_station_id == origin_station_id:
+                    # Origin is at the start of this segment - include it
+                    collecting = True
+                elif segment.destination_station_id == origin_station_id:
+                    # Origin is at the end of this segment (intermediate stop)
+                    # Start collecting from NEXT segment
+                    collecting = True
+                    continue
 
-            # Collect segments while in range
-            if in_range:
+            # Collect segments once we've started
+            if collecting:
                 overlapping.append(segment)
+                
+                # Stop when we reach the destination
+                if segment.destination_station_id == destination_station_id:
+                    break
 
-            # Stop collecting after we pass the destination station
-            if segment.destination_station_id == destination_station_id:
-                break
+        if not overlapping:
+            logger.warning(
+                f"No segments found for {origin_station_id} → {destination_station_id}"
+            )
+        elif overlapping and overlapping[-1].destination_station_id != destination_station_id:
+            logger.error(
+                f"Path incomplete for {origin_station_id} → {destination_station_id}. "
+                f"Last segment ends at: {overlapping[-1].destination_station_id}, "
+                f"Expected: {destination_station_id}, "
+                f"Collected {len(overlapping)} segments"
+            )
 
         logger.debug(
             f"Found {len(overlapping)} overlapping segments for booking "
@@ -471,6 +509,66 @@ class CapacityService:
 
         logger.info(
             f"Incremented load for {num_passengers} passengers in {train_class.value} class "
+            f"on {len(overlapping_segments)} segments"
+        )
+
+    @staticmethod
+    def decrement_segment_loads(
+        db: Session,
+        schedule_capacity_id: int,
+        origin_station_id: str,
+        destination_station_id: str,
+        train_class: TrainClass,
+        num_passengers: int = 1
+    ):
+        """
+        Decrement passenger load on all overlapping segments after ticket cancellation/refund
+
+        Args:
+            db: Database session
+            schedule_capacity_id: Schedule capacity ID
+            origin_station_id: Booking origin
+            destination_station_id: Booking destination
+            train_class: Train class
+            num_passengers: Number of passengers
+        """
+        # Find overlapping segments
+        overlapping_segments = CapacityService.find_overlapping_segments(
+            db, schedule_capacity_id, origin_station_id, destination_station_id
+        )
+
+        # Decrement load on each segment
+        for segment in overlapping_segments:
+            if train_class == TrainClass.First:
+                segment.first_class_load = max(0, segment.first_class_load - num_passengers)
+            elif train_class == TrainClass.Second:
+                segment.second_class_load = max(0, segment.second_class_load - num_passengers)
+            else:  # Third class
+                segment.third_class_load = max(0, segment.third_class_load - num_passengers)
+
+            # Update total load
+            segment.total_load = (
+                segment.first_class_load +
+                segment.second_class_load +
+                segment.third_class_load
+            )
+
+        # Update schedule capacity booking counters
+        schedule_capacity = db.query(ScheduleCapacity).get(schedule_capacity_id)
+        if schedule_capacity:
+            if train_class == TrainClass.First:
+                schedule_capacity.booked_first_class = max(0, schedule_capacity.booked_first_class - num_passengers)
+            elif train_class == TrainClass.Second:
+                schedule_capacity.booked_second_class = max(0, schedule_capacity.booked_second_class - num_passengers)
+            else:  # Third class
+                schedule_capacity.booked_third_class = max(0, schedule_capacity.booked_third_class - num_passengers)
+
+            schedule_capacity.total_bookings = max(0, schedule_capacity.total_bookings - num_passengers)
+
+        db.commit()
+
+        logger.info(
+            f"Decremented load for {num_passengers} passengers in {train_class.value} class "
             f"on {len(overlapping_segments)} segments"
         )
 
@@ -736,4 +834,30 @@ def get_available_capacity(
     """Get available capacity for route"""
     return CapacityService.get_available_capacity_for_route(
         db, schedule_id, schedule_date, origin_station_id, destination_station_id
+    )
+
+
+def get_or_create_schedule_capacity(
+    db: Session,
+    schedule_id: str,
+    schedule_date: date
+) -> Optional[ScheduleCapacity]:
+    """Get or create schedule capacity for a specific date"""
+    return CapacityService.get_or_create_schedule_capacity(
+        db, schedule_id, schedule_date
+    )
+
+
+def decrement_segment_loads(
+    db: Session,
+    schedule_capacity_id: int,
+    origin_station_id: str,
+    destination_station_id: str,
+    train_class: TrainClass,
+    num_passengers: int = 1
+):
+    """Decrement passenger loads when ticket is cancelled/refunded"""
+    return CapacityService.decrement_segment_loads(
+        db, schedule_capacity_id, origin_station_id, destination_station_id,
+        train_class, num_passengers
     )

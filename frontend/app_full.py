@@ -1278,7 +1278,8 @@ def ticket_layout():
                                     {"label": "Cancelled", "value": "Cancelled"},
                                     {"label": "Refunded", "value": "Refunded"},
                                     {"label": "Pending", "value": "Pending"},
-                                    {"label": "Confirmed", "value": "Confirmed"}
+                                    {"label": "Completed", "value": "Completed"},
+                                    {"label": "No-Show", "value": "No-Show"}
                                 ],
                                 placeholder="Select new status...",
                                 style={'marginBottom': '16px'}
@@ -3193,6 +3194,11 @@ def load_schedules_display(origin, dest, date, token):
                     ','.join(available_classes) if available_classes else '',
                     id={"type": "schedule-classes", "index": s["train_schedule_id"]},
                     style={'display': 'none'}
+                ),
+                # Hidden store for full schedule data
+                dcc.Store(
+                    id={"type": "schedule-data", "index": s["train_schedule_id"]},
+                    data=s
                 )
             ], style={
                 'padding': '16px',
@@ -3219,10 +3225,11 @@ def load_schedules_display(origin, dest, date, token):
      Output("ticket-class", "options"),
      Output("ticket-class", "value")],
     [Input({"type": "schedule-radio", "index": dash.dependencies.ALL}, "value")],
-    [State({"type": "schedule-classes", "index": dash.dependencies.ALL}, "children")],
+    [State({"type": "schedule-data", "index": dash.dependencies.ALL}, "data"),
+     State({"type": "schedule-classes", "index": dash.dependencies.ALL}, "children")],
     prevent_initial_call=True
 )
-def store_selected_schedule_and_update_classes(selected_values, available_classes_list):
+def store_selected_schedule_and_update_classes(selected_values, schedule_data_list, available_classes_list):
     """Store the selected train schedule and update available class options"""
     if not selected_values:
         return None, [], None
@@ -3238,6 +3245,11 @@ def store_selected_schedule_and_update_classes(selected_values, available_classe
 
     if selected_schedule_id is None:
         return None, [], None
+
+    # Get the full schedule data
+    schedule_data = None
+    if selected_index is not None and selected_index < len(schedule_data_list):
+        schedule_data = schedule_data_list[selected_index]
 
     # Get the available classes for the selected schedule
     available_classes_str = available_classes_list[selected_index] if selected_index < len(available_classes_list) else ""
@@ -3261,7 +3273,58 @@ def store_selected_schedule_and_update_classes(selected_values, available_classe
     # Set default value to the first available class
     default_value = class_options[0]["value"] if class_options else None
 
-    return selected_schedule_id, class_options, default_value
+    return schedule_data, class_options, default_value
+
+# Callback to calculate and update ticket price
+@callback(
+    Output("ticket-price", "children"),
+    [Input("ticket-origin", "value"),
+     Input("ticket-destination", "value"),
+     Input("ticket-class", "value"),
+     Input("ticket-count-store", "data"),
+     Input({"type": "passenger-type", "index": dash.dependencies.ALL}, "value")],
+    prevent_initial_call=True
+)
+def update_ticket_price(origin, destination, train_class, ticket_count, passenger_types):
+    """Calculate and display total ticket price"""
+    # Validate required fields
+    if not all([origin, destination, train_class, ticket_count]):
+        return "LKR 0.00"
+    
+    try:
+        # Calculate price for each passenger
+        total_price = 0
+        
+        # If passenger types not yet set, assume all adults
+        if not passenger_types or len(passenger_types) == 0:
+            passenger_types = ["adult"] * ticket_count
+        
+        # Calculate price for each passenger based on type
+        for i in range(ticket_count):
+            is_child = False
+            if i < len(passenger_types):
+                is_child = (passenger_types[i] == "child")
+            
+            # Call backend API to calculate price
+            payload = {
+                "origin_station_id": origin,
+                "destination_station_id": destination,
+                "class_": train_class,
+                "passengers": 1,
+                "is_child": is_child
+            }
+            
+            response = make_api_request("/tickets/calculate-price", method="POST", data=payload)
+            
+            if response and "total" in response:
+                total_price += float(response["total"])
+        
+        return f"LKR {total_price:,.2f}"
+    
+    except Exception as e:
+        print(f"Error calculating price: {e}")
+        return "LKR 0.00"
+
 @callback(
     [Output("ticket-alert", "children"),
      Output("ticket-alert", "is_open"),
@@ -3282,51 +3345,96 @@ def store_selected_schedule_and_update_classes(selected_values, available_classe
 def book_ticket(n, origin, dest, sched, cls, date, ticket_count, nic_list, contact_list, type_list, token):
     if not n or not token:
         return "", False, "danger"
+    
     # Validate required fields
-    if not all([origin, dest, sched, cls, date]):
-        return "Please fill all required fields (origin, destination, schedule, class, date)", True, "warning"
+    if not all([origin, dest, cls, date]):
+        return "Please fill all required fields (origin, destination, class, date)", True, "warning"
+    
+    # Validate schedule data exists
+    if not sched or not isinstance(sched, dict):
+        return "Please select a train schedule", True, "warning"
+    
     if not ticket_count or ticket_count < 1:
         return "Please select at least one ticket", True, "warning"
+    
+    # Extract schedule details
+    schedule_id = sched.get("train_schedule_id")
+    origin_departure = sched.get("origin_departure", "00:00")
+    destination_arrival = sched.get("destination_departure", "00:00")  # Backend calls arrival "destination_departure"
+    
+    if not schedule_id:
+        return "Invalid schedule selected", True, "danger"
+    
     # Book tickets for each passenger
     booked_tickets = []
     failed_bookings = 0
+    
     for i in range(ticket_count):
         passenger_nic = nic_list[i] if i < len(nic_list) else None
         passenger_contact = contact_list[i] if i < len(contact_list) else None
         passenger_type = type_list[i] if i < len(type_list) else "adult"
         is_child = (passenger_type == "child")
+        
         # Validate adult passengers have NIC
         if not is_child and not passenger_nic:
             return f"Please enter NIC/Passport for Passenger {i+1} (Adult)", True, "warning"
+        
         # For children, NIC and contact are optional
         if is_child:
-            passenger_nic = passenger_nic or "CHILD"
+            passenger_nic = passenger_nic or "CHILD-" + str(i+1)
             passenger_contact = passenger_contact or None
-        # Schema v2.0: Split NIC/Passport into separate fields
-        ticket_data = {
-            "schedule_date": date,
-            "schedule_id": sched,
+        
+        # Calculate ticket fee first
+        price_request = {
             "origin_station_id": origin,
             "destination_station_id": dest,
-            "class": cls,
-            "contact_number": passenger_contact,
-            "payment_method": "Cash",
-            "booking_platform": "Web",
+            "class_": cls,
+            "passengers": 1,
             "is_child": is_child
         }
+        
+        price_response = make_api_request("/tickets/calculate-price", method="POST", data=price_request)
+        
+        if not price_response or "total" not in price_response:
+            return f"Failed to calculate price for Passenger {i+1}", True, "danger"
+        
+        ticket_fee = float(price_response["total"])
+        
+        # Build ticket data with all required fields
+        ticket_data = {
+            "schedule_date": date,
+            "schedule_id": schedule_id,
+            "origin_station_id": origin,
+            "destination_station_id": dest,
+            "origin_departure": origin_departure,
+            "destination_departure": destination_arrival,
+            "class_": cls,  # Use class_ with underscore as backend expects
+            "fee": ticket_fee,
+            "contact_number": passenger_contact,
+            "payment_method": "Cash",
+            "booking_platform": "Website",  # Changed from "Web" to "Website"
+            "is_child": is_child,
+            "issue_date": date  # Use schedule date as issue date
+        }
+        
         # Add either NIC or Passport (v2.0 schema has separate fields)
-        if passenger_nic and passenger_nic != "CHILD":
-            # Simple heuristic: if contains letters, likely passport
+        if passenger_nic and not passenger_nic.startswith("CHILD-"):
+            # Simple heuristic: if contains letters (except V/X), likely passport
             if any(c.isalpha() for c in passenger_nic.replace('V', '').replace('X', '')):
                 ticket_data["passport"] = passenger_nic
             else:
                 ticket_data["nic"] = passenger_nic
-        # For children, NIC not required in v2.0
+        else:
+            # For children without NIC, use passport field with placeholder
+            ticket_data["passport"] = passenger_nic
+        
         result = make_api_request("/tickets", method="POST", token=token, data=ticket_data)
-        if result:
+        
+        if result and "ticket_id" in result:
             booked_tickets.append(result['ticket_id'])
         else:
             failed_bookings += 1
+    
     # Return summary
     if len(booked_tickets) == ticket_count:
         ticket_ids = ", ".join(booked_tickets)
@@ -3955,18 +4063,34 @@ def verify_ticket_for_cancel(n, ticket_id, nic_passport, token):
     """Verify ticket by ID and NIC/Passport"""
     if not n or not token:
         return "", False, "danger", html.Div(), True, None
+    
     if not ticket_id or not nic_passport:
         return "Please enter both Ticket ID and NIC/Passport", True, "warning", html.Div(), True, None
+    
     # Fetch ticket from backend
     ticket = make_api_request(f"/tickets/{ticket_id}", token=token)
+    
     if not ticket:
         return f"❌ Ticket {ticket_id} not found", True, "danger", html.Div(), True, None
+    
     # Verify NIC/Passport matches (v2.0: separate fields)
     ticket_nic = ticket.get('nic')
     ticket_passport = ticket.get('passport')
+    
     # Check if provided value matches either NIC or Passport
     if not (ticket_nic == nic_passport or ticket_passport == nic_passport):
         return "❌ NIC/Passport does not match ticket records", True, "danger", html.Div(), True, None
+    
+    # Fetch station names
+    origin_id = ticket.get('origin_station_id')
+    destination_id = ticket.get('destination_station_id')
+    
+    origin_station = make_api_request(f"/stations/{origin_id}", token=token) if origin_id else None
+    destination_station = make_api_request(f"/stations/{destination_id}", token=token) if destination_id else None
+    
+    origin_name = origin_station.get('station_name', origin_id) if origin_station else origin_id
+    destination_name = destination_station.get('station_name', destination_id) if destination_station else destination_id
+    
     # Display ticket details
     ticket_info = html.Div([
         html.Div([
@@ -3974,7 +4098,7 @@ def verify_ticket_for_cancel(n, ticket_id, nic_passport, token):
         ], style={'marginBottom': '12px'}),
         html.Div([
             html.P([html.Strong("Ticket ID: "), ticket.get('ticket_id')], style={'margin': '4px 0', 'fontSize': '13px'}),
-            html.P([html.Strong("Route: "), f"Station {ticket.get('origin_station_id')} → Station {ticket.get('destination_station_id')}"],
+            html.P([html.Strong("Route: "), f"{origin_name} → {destination_name}"],
                    style={'margin': '4px 0', 'fontSize': '13px'}),
             html.P([html.Strong("Schedule Date: "), str(ticket.get('schedule_date'))],
                    style={'margin': '4px 0', 'fontSize': '13px'}),
@@ -3991,6 +4115,7 @@ def verify_ticket_for_cancel(n, ticket_id, nic_passport, token):
             'border': f'1px solid {COLORS["border"]}'
         })
     ])
+    
     return "✅ Ticket verified successfully. You can now update the status.", True, "success", ticket_info, False, ticket
 @callback(
     [Output("cancel-ticket-alert", "children", allow_duplicate=True),
@@ -4016,13 +4141,15 @@ def update_ticket_status(n, verified_ticket, new_status, token):
     if not new_status:
         return "⚠️ Please select a new status", True, "warning", no_update, no_update, no_update, no_update, no_update
     ticket_id = verified_ticket.get('ticket_id')
+    
     # Update ticket status via backend API
     result = make_api_request(
-        f"/tickets/{ticket_id}/status",
+        f"/tickets/{ticket_id}",
         method="PATCH",
         token=token,
         data={"status": new_status}
     )
+    
     if result:
         return f"✅ Ticket {ticket_id} status updated to {new_status}", True, "success", "", "", None, html.Div(), True
     else:
