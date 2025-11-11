@@ -701,20 +701,40 @@ async def get_available_schedules(
     day_column = getattr(TrainSchedule, day_name)
 
     # Find schedules that operate on this day and have both stations
+    # FIXED: Check if both stations exist on the route (not just direct segments)
+    # A train schedule can have multiple station-to-station segments
+    # We need to find schedules where BOTH origin and destination appear
+    
+    # Get all schedule IDs where origin station appears (as origin OR destination in any segment)
     schedule_ids_with_origin = db.query(TrainScheduleByStation.train_schedule_id).filter(
-        TrainScheduleByStation.origin_station_id == origin_station_id
+        or_(
+            TrainScheduleByStation.origin_station_id == origin_station_id,
+            TrainScheduleByStation.destination_station_id == origin_station_id
+        )
     ).distinct()
 
+    # Get all schedule IDs where destination station appears (as origin OR destination in any segment)
     schedule_ids_with_dest = db.query(TrainScheduleByStation.train_schedule_id).filter(
-        TrainScheduleByStation.destination_station_id == destination_station_id
+        or_(
+            TrainScheduleByStation.origin_station_id == destination_station_id,
+            TrainScheduleByStation.destination_station_id == destination_station_id
+        )
     ).distinct()
 
-    # Get intersection
-    common_schedule_ids = set(s[0] for s in schedule_ids_with_origin).intersection(
-        set(s[0] for s in schedule_ids_with_dest)
-    )
+    # DEBUG: Log what we found
+    origin_ids = set(s[0] for s in schedule_ids_with_origin)
+    dest_ids = set(s[0] for s in schedule_ids_with_dest)
+    
+    logger.info(f"DEBUG: Schedules with origin {origin_station_id}: {origin_ids}")
+    logger.info(f"DEBUG: Schedules with destination {destination_station_id}: {dest_ids}")
+
+    # Get intersection - schedules that have BOTH stations
+    common_schedule_ids = origin_ids.intersection(dest_ids)
+    
+    logger.info(f"DEBUG: Common schedule IDs: {common_schedule_ids}")
 
     if not common_schedule_ids:
+        logger.warning(f"No common schedules found between {origin_station_id} and {destination_station_id}")
         return []
 
     # Build schedule filter conditions
@@ -739,19 +759,95 @@ async def get_available_schedules(
         )
     ).order_by(TrainSchedule.origin_departure).all()
 
+    logger.info(f"DEBUG: Filters applied - day_column={day_name}, status=Active, filters={len(schedule_filters)}")
+    logger.info(f"DEBUG: Found {len(schedules)} schedules after filtering")
+    
+    for schedule in schedules:
+        logger.info(f"DEBUG: Schedule {schedule.train_schedule_id} - {day_name}={getattr(schedule, day_name)}, status={schedule.status}")
+
+    # OPTIMIZATION: Fetch all segments for all schedules at once to avoid N+1 queries
+    all_segments = db.query(TrainScheduleByStation).filter(
+        TrainScheduleByStation.train_schedule_id.in_([s.train_schedule_id for s in schedules])
+    ).all()
+    
+    # Group segments by schedule_id for quick lookup
+    segments_by_schedule = {}
+    for seg in all_segments:
+        if seg.train_schedule_id not in segments_by_schedule:
+            segments_by_schedule[seg.train_schedule_id] = []
+        segments_by_schedule[seg.train_schedule_id].append(seg)
+    
+    # Fetch station names once
+    station_cache = {}
+    for station_id in [origin_station_id, destination_station_id]:
+        if station_id not in station_cache:
+            station_obj = db.query(TrainStation).filter(TrainStation.station_id == station_id).first()
+            station_cache[station_id] = station_obj.station_name if station_obj else station_id
+
     # Build response
     results = []
     for schedule in schedules:
-        # Get timing details
-        segment = db.query(TrainScheduleByStation).filter(
-            and_(
-                TrainScheduleByStation.train_schedule_id == schedule.train_schedule_id,
-                TrainScheduleByStation.origin_station_id == origin_station_id,
-                TrainScheduleByStation.destination_station_id == destination_station_id
+        segments = segments_by_schedule.get(schedule.train_schedule_id, [])
+        
+        if not segments:
+            logger.warning(f"No segments found for schedule {schedule.train_schedule_id}")
+            continue
+        
+        # Find the departure time from origin station
+        # Look for any segment where origin station is the origin_station_id
+        origin_departure_time = None
+        for seg in segments:
+            if seg.origin_station_id == origin_station_id:
+                origin_departure_time = seg.origin_departure
+                break
+        
+        # If not found as origin, check if it's a destination (intermediate stop)
+        if not origin_departure_time:
+            for seg in segments:
+                if seg.destination_station_id == origin_station_id:
+                    # This means the train arrives at this station but continues
+                    # Use the arrival time as departure for next segment
+                    origin_departure_time = seg.destination_departure
+                    break
+        
+        # Find the arrival time at destination station  
+        # Look for any segment where destination station is the destination_station_id
+        destination_arrival_time = None
+        for seg in segments:
+            if seg.destination_station_id == destination_station_id:
+                destination_arrival_time = seg.destination_departure
+                break
+        
+        # If not found as destination, check if it's an origin (train departs from here)
+        if not destination_arrival_time:
+            for seg in segments:
+                if seg.origin_station_id == destination_station_id:
+                    # Shouldn't happen normally, but handle it
+                    destination_arrival_time = seg.origin_departure
+                    break
+        
+        if not origin_departure_time or not destination_arrival_time:
+            logger.warning(
+                f"Could not find proper segments for schedule {schedule.train_schedule_id} "
+                f"between {origin_station_id} and {destination_station_id}. "
+                f"Found origin_time={origin_departure_time is not None}, "
+                f"dest_time={destination_arrival_time is not None}"
             )
-        ).first()
+            continue
 
-        if segment:
+        if origin_departure_time and destination_arrival_time:
+            # Calculate duration between the two times
+            from datetime import datetime, timedelta
+            temp_date = datetime.today().date()
+            origin_dt = datetime.combine(temp_date, origin_departure_time)
+            dest_dt = datetime.combine(temp_date, destination_arrival_time)
+            
+            # Handle overnight journeys
+            if dest_dt < origin_dt:
+                dest_dt += timedelta(days=1)
+            
+            journey_duration = dest_dt - origin_dt
+            
             # Get capacity information for this route
             from backend.services.capacity_service import get_available_capacity
 
@@ -785,11 +881,11 @@ async def get_available_schedules(
                 "train_schedule_id": schedule.train_schedule_id,
                 "train_schedule": schedule.train_schedule,
                 "route_id": schedule.route_id,
-                "origin_station": segment.origin_station,
-                "origin_departure": segment.origin_departure.strftime("%H:%M"),
-                "destination_station": segment.destination_station,
-                "destination_departure": segment.destination_departure.strftime("%H:%M"),
-                "duration": str(segment.duration),
+                "origin_station": station_cache.get(origin_station_id, origin_station_id),
+                "origin_departure": origin_departure_time.strftime("%H:%M"),
+                "destination_station": station_cache.get(destination_station_id, destination_station_id),
+                "destination_departure": destination_arrival_time.strftime("%H:%M"),
+                "duration": str(journey_duration),
                 "available_classes": available_classes,
                 "total_available_capacity": capacity_info.get("total", 0),
                 "capacity_status": "available" if capacity_info.get("total", 0) > 0 else "full",
@@ -797,6 +893,8 @@ async def get_available_schedules(
                 "is_holiday": is_holiday,
                 "holiday_info": day_info.get("holiday_info", [])
             })
+        else:
+            logger.warning(f"Could not find proper segments for schedule {schedule.train_schedule_id} between {origin_station_id} and {destination_station_id}")
 
     logger.info(f"Returning {len(results)} available schedules (Poya: {is_poya}, Holiday: {is_holiday})")
     return results

@@ -2775,8 +2775,8 @@ def update_class_distribution_pie(n, pathname, token):
 def load_origin_stations(pathname, token):
     if pathname != "/tickets":
         return []
-    # Stations endpoint doesn't require authentication
-    stations = make_api_request("/stations", token=None)
+    # Stations endpoint doesn't require authentication - request max limit (500)
+    stations = make_api_request("/stations?limit=500", token=None)
     if stations and isinstance(stations, list):
         try:
             opts = [{"label": s.get("station_name", "Unknown"), "value": s.get("station_id", "")} for s in stations]
@@ -2801,7 +2801,8 @@ def load_destination_stations(pathname, origin_value, token):
     if pathname != "/tickets":
         return []
 
-    stations = make_api_request("/stations", token=None)
+    # Request max limit (500) to get all stations
+    stations = make_api_request("/stations?limit=500", token=None)
     if stations and isinstance(stations, list):
         try:
             # Exclude the origin station from destination options
@@ -2829,7 +2830,13 @@ def load_schedules_display(origin, dest, date, token):
 
     # Use the correct API endpoint - /schedules/available with travel_date parameter
     endpoint = f"/schedules/available?origin_station_id={origin}&destination_station_id={dest}&travel_date={date}"
-    schedules = make_api_request(endpoint, token=token)
+    # Increased timeout to 15s because capacity checking can be slow with many schedules
+    schedules = make_api_request(endpoint, token=token, timeout=10000)
+    
+    # DEBUG: Log the response
+    logger.info(f"DEBUG Frontend: Received {len(schedules) if isinstance(schedules, list) else 'non-list'} schedules")
+    if schedules and isinstance(schedules, list) and len(schedules) > 0:
+        logger.info(f"DEBUG Frontend: First schedule keys: {schedules[0].keys() if isinstance(schedules[0], dict) else 'not a dict'}")
 
     if not schedules or not isinstance(schedules, list) or len(schedules) == 0:
         logger.warning(f"No schedules found for origin={origin}, dest={dest}, date={date}")
@@ -2888,12 +2895,22 @@ def load_schedules_display(origin, dest, date, token):
         else:
             duration_text = "Duration not available"
 
-        # Get available classes - backend doesn't return this yet, so default to all classes
-        available_classes = s.get('available_classes', ['First', 'Second', 'Third'])
-        if isinstance(available_classes, str):
-            available_classes = [c.strip() for c in available_classes.split(',') if c.strip()]
-        elif not isinstance(available_classes, list):
-            available_classes = ['First', 'Second', 'Third']  # Default to all classes
+        # Get available classes - backend returns list of dicts with class and available_seats
+        available_classes_data = s.get('available_classes', [])
+        
+        # Extract class names from backend response
+        if isinstance(available_classes_data, list) and len(available_classes_data) > 0:
+            # Check if it's a list of dicts (new format)
+            if isinstance(available_classes_data[0], dict):
+                available_classes = [cls_info.get('class') for cls_info in available_classes_data if cls_info.get('class')]
+            else:
+                # It's already a list of strings
+                available_classes = available_classes_data
+        elif isinstance(available_classes_data, str):
+            available_classes = [c.strip() for c in available_classes_data.split(',') if c.strip()]
+        else:
+            # Default to all classes if nothing returned
+            available_classes = ['First', 'Second', 'Third']
 
         # Create class badges
         class_badges = []
@@ -3377,8 +3394,8 @@ def load_schedule_origin_stations(pathname):
     if pathname != "/schedule-stations":
         return []
 
-    # Stations endpoint doesn't require authentication
-    stations = make_api_request("/stations", token=None)
+    # Stations endpoint doesn't require authentication - request max limit (500)
+    stations = make_api_request("/stations?limit=500", token=None)
     if stations and isinstance(stations, list):
         opts = [{"label": s.get("station_name", "Unknown"), "value": s.get("station_id", "")} for s in stations]
         return opts
@@ -3395,7 +3412,8 @@ def load_schedule_destination_stations(pathname, origin_value):
     if pathname != "/schedule-stations":
         return []
 
-    stations = make_api_request("/stations", token=None)
+    # Request max limit (500) to get all stations
+    stations = make_api_request("/stations?limit=500", token=None)
     if stations and isinstance(stations, list):
         # Exclude the origin station from destination options
         opts = [
