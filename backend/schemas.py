@@ -121,13 +121,31 @@ class TrainModelCreate(BaseModel):
     seating_passengers_per_compartment: int = Field(..., ge=0)
     standing_passengers_per_compartment: int = Field(..., ge=0)
     total_passengers_per_compartment: int = Field(..., ge=0)
-    assigned_routes: Optional[str] = None
+    # Route assignments (R01-R09)
+    r01: bool = False
+    r02: bool = False
+    r03: bool = False
+    r04: bool = False
+    r05: bool = False
+    r06: bool = False
+    r07: bool = False
+    r08: bool = False
+    r09: bool = False
 
 class TrainModelUpdate(BaseModel):
     """Schema for updating train model"""
     model_name: Optional[str] = None
     operational_units: Optional[int] = Field(None, ge=0)
-    assigned_routes: Optional[str] = None
+    # Route assignments (R01-R09)
+    r01: Optional[bool] = None
+    r02: Optional[bool] = None
+    r03: Optional[bool] = None
+    r04: Optional[bool] = None
+    r05: Optional[bool] = None
+    r06: Optional[bool] = None
+    r07: Optional[bool] = None
+    r08: Optional[bool] = None
+    r09: Optional[bool] = None
 
 class TrainModelResponse(BaseModel):
     """Schema for train model response"""
@@ -141,6 +159,16 @@ class TrainModelResponse(BaseModel):
     seating_passengers_per_compartment: int
     standing_passengers_per_compartment: int
     total_passengers_per_compartment: int
+    # Route assignments (R01-R09)
+    r01: bool
+    r02: bool
+    r03: bool
+    r04: bool
+    r05: bool
+    r06: bool
+    r07: bool
+    r08: bool
+    r09: bool
 
     class Config:
         from_attributes = True
@@ -335,6 +363,8 @@ class PriceResponse(BaseModel):
     id: int
     origin_station_id: str
     destination_station_id: str
+    origin_station_name: Optional[str] = None
+    destination_station_name: Optional[str] = None
     distance: Decimal
     first_class_fee: Decimal
     second_class_fee: Decimal
