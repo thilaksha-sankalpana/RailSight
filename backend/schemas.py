@@ -426,6 +426,8 @@ class TicketResponse(BaseModel):
     is_child: bool
     schedule_date: date
     schedule_id: str
+    origin_station_id: str
+    destination_station_id: str
     origin_departure: time
     destination_departure: time
     class_: str = Field(..., alias="class")
@@ -433,6 +435,7 @@ class TicketResponse(BaseModel):
     status: str
     payment_status: str
     issue_date: date
+    contact_number: Optional[str] = None
 
     class Config:
         from_attributes = True

@@ -1000,6 +1000,7 @@ async def get_prices(
     db: Session = Depends(get_db)
 ):
     """Get ticket prices"""
+    today = date.today()
     query = db.query(TrainStationTicketPrice)
 
     if origin:
@@ -1007,8 +1008,15 @@ async def get_prices(
     if destination:
         query = query.filter(TrainStationTicketPrice.destination_station_id == destination)
 
+    # Get currently active prices (started and not yet expired)
     prices = query.filter(
-        TrainStationTicketPrice.effective_to.is_(None)
+        and_(
+            TrainStationTicketPrice.effective_from <= today,
+            or_(
+                TrainStationTicketPrice.effective_to.is_(None),
+                TrainStationTicketPrice.effective_to >= today
+            )
+        )
     ).offset(skip).limit(limit).all()
 
     return prices
@@ -1019,11 +1027,18 @@ async def calculate_ticket_price(
     db: Session = Depends(get_db)
 ):
     """Calculate ticket price"""
+    today = date.today()
+    
+    # Query for active pricing: either no end date OR current date is within validity period
     pricing = db.query(TrainStationTicketPrice).filter(
         and_(
             TrainStationTicketPrice.origin_station_id == request.origin_station_id,
             TrainStationTicketPrice.destination_station_id == request.destination_station_id,
-            TrainStationTicketPrice.effective_to.is_(None)
+            TrainStationTicketPrice.effective_from <= today,
+            or_(
+                TrainStationTicketPrice.effective_to.is_(None),
+                TrainStationTicketPrice.effective_to >= today
+            )
         )
     ).first()
 
@@ -1303,7 +1318,7 @@ async def update_ticket(
     current_user: UserProfile = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """Update ticket status"""
+    """Update ticket status and release capacity if cancelled/refunded"""
     logger.info(f"Updating ticket {ticket_id}")
 
     ticket = db.query(Ticket).filter(
@@ -1313,8 +1328,58 @@ async def update_ticket(
     if not ticket:
         raise ResourceNotFoundError("Ticket", ticket_id)
 
+    # Store old status to detect changes
+    old_status = ticket.status
+
+    # Update status if provided
     if ticket_update.status:
-        ticket.status = TicketStatus[ticket_update.status]
+        new_status = TicketStatus[ticket_update.status]
+        ticket.status = new_status
+
+        # Release capacity if ticket is being cancelled/refunded/no-show
+        # and it was previously in a state that held capacity (Pending or Completed)
+        should_release_capacity = (
+            new_status in [TicketStatus.Cancelled, TicketStatus.Refunded, TicketStatus.NoShow] and
+            old_status in [TicketStatus.Pending, TicketStatus.Completed]
+        )
+
+        if should_release_capacity:
+            try:
+                from backend.services.capacity_service import decrement_segment_loads, get_or_create_schedule_capacity
+                from backend.models import TrainClass
+
+                # Get schedule capacity
+                schedule_capacity = get_or_create_schedule_capacity(
+                    db,
+                    ticket.schedule_id,
+                    ticket.travel_date
+                )
+
+                if schedule_capacity:
+                    # Map class name to TrainClass enum
+                    train_class = TrainClass[ticket.class_.replace(" ", "")]
+
+                    # Release capacity on all segments
+                    decrement_segment_loads(
+                        db=db,
+                        schedule_capacity_id=schedule_capacity.id,
+                        origin_station_id=ticket.origin_station_id,
+                        destination_station_id=ticket.destination_station_id,
+                        train_class=train_class,
+                        num_passengers=ticket.number_of_passengers
+                    )
+
+                    logger.info(
+                        f"✅ Released capacity for ticket {ticket_id}: "
+                        f"{ticket.number_of_passengers} passengers in {ticket.class_} class"
+                    )
+                else:
+                    logger.warning(f"Could not find schedule capacity for ticket {ticket_id}")
+
+            except Exception as e:
+                logger.error(f"Failed to release capacity for ticket {ticket_id}: {e}")
+                # Don't fail the whole request if capacity release fails
+                # Status update will still proceed
 
     if ticket_update.payment_status:
         ticket.payment_status = PaymentStatus[ticket_update.payment_status]
@@ -1322,7 +1387,7 @@ async def update_ticket(
     db.commit()
     db.refresh(ticket)
 
-    logger.info(f"✅ Ticket {ticket_id} updated")
+    logger.info(f"✅ Ticket {ticket_id} updated (status: {ticket.status})")
 
     return ticket
 
