@@ -1306,154 +1306,378 @@ def train_models_layout():
     return html.Div([
         create_topbar(),
         html.Div([
-            # Header
+            # Enhanced Header with Gradient Background
             html.Div([
                 html.Div([
-                    html.I(className="fas fa-train", style={
-                        'fontSize': '32px',
-                        'color': COLORS['primary'],
-                        'marginRight': '16px'
+                    html.Div([
+                        html.I(className="fas fa-train", style={
+                            'fontSize': '36px',
+                            'color': 'white'
+                        })
+                    ], style={
+                        'width': '70px',
+                        'height': '70px',
+                        'borderRadius': '12px',
+                        'background': f'linear-gradient(135deg, {COLORS["primary"]} 0%, {COLORS["primary_dark"]} 100%)',
+                        'display': 'flex',
+                        'alignItems': 'center',
+                        'justifyContent': 'center',
+                        'marginRight': '16px',
+                        'boxShadow': '0 4px 12px rgba(196, 30, 58, 0.25)'
                     }),
                     html.Div([
                         html.H3("Train Models Management", style={
                             'color': COLORS['text_primary'],
                             'fontWeight': '700',
                             'margin': '0',
-                            'fontSize': '28px'
+                            'fontSize': '26px'
                         }),
-                        html.P("Manage railway train models and specifications", style={
+                        html.P([
+                            html.I(className="fas fa-cogs", style={'marginRight': '6px'}),
+                            "Manage railway train models, specifications, and route assignments"
+                        ], style={
                             'color': COLORS['text_secondary'],
                             'fontSize': '14px',
-                            'margin': '4px 0 0 0'
+                            'margin': '6px 0 0 0'
                         })
                     ])
-                ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '0'}),
-                html.Div([
-                    dbc.Button([
-                        html.I(className="fas fa-plus", style={'marginRight': '8px'}),
-                        "Add New Model"
-                    ], id="add-train-model-btn", style=BUTTON_PRIMARY)
-                ], style={'marginLeft': 'auto'})
+                ], style={'display': 'flex', 'alignItems': 'center'}),
+                dbc.Button([
+                    html.I(className="fas fa-plus-circle", style={'marginRight': '8px'}),
+                    "Add New Model"
+                ], id="add-train-model-btn", color="primary", size="lg")
             ], style={
                 'display': 'flex',
                 'alignItems': 'center',
                 'justifyContent': 'space-between',
                 'background': f'linear-gradient(135deg, {COLORS["surface"]} 0%, #f8f9fa 100%)',
-                'padding': '24px 30px',
-                'marginBottom': '30px',
+                'padding': '24px 28px',
+                'marginBottom': '24px',
                 'borderRadius': '16px',
                 'boxShadow': '0 4px 12px rgba(0,0,0,0.06)',
                 'border': f'1px solid {COLORS["border"]}'
             }),
 
             # Alert for CRUD operations
-            dbc.Alert(id="train-model-alert", is_open=False, duration=4000, style={'marginBottom': '20px'}),
+            dbc.Alert(id="train-model-alert", is_open=False, duration=4000, dismissable=True, 
+                     style={'marginBottom': '20px'}),
 
-            # Filter Section
+            # Enhanced Filter Section with Modern Design
             html.Div([
+                # Filter Header
                 html.Div([
-                    html.I(className="fas fa-filter", style={'marginRight': '10px', 'color': COLORS['primary']}),
-                    html.H5("Filter Models", style={'display': 'inline', 'margin': '0', 'fontWeight': '600'})
-                ], style={'padding': '20px', 'borderBottom': f'1px solid {COLORS["border"]}'}),
+                    html.Div([
+                        html.I(className="fas fa-filter", style={
+                            'marginRight': '12px',
+                            'color': COLORS['primary'],
+                            'fontSize': '18px'
+                        }),
+                        html.H5("Filter Models", style={
+                            'margin': '0',
+                            'fontWeight': '600',
+                            'fontSize': '18px',
+                            'color': COLORS['text_primary']
+                        })
+                    ], style={'display': 'flex', 'alignItems': 'center'}),
+                    html.P("Refine your search using multiple criteria", style={
+                        'margin': '6px 0 0 0',
+                        'color': COLORS['text_secondary'],
+                        'fontSize': '13px'
+                    })
+                ], style={
+                    'padding': '20px 24px',
+                    'borderBottom': f'1px solid {COLORS["border"]}',
+                    'background': '#fafbfc'
+                }),
+                
+                # Filter Controls
                 html.Div([
                     dbc.Row([
                         dbc.Col([
-                            dbc.Label("Model Name", style={'fontWeight': '500', 'marginBottom': '8px'}),
+                            dbc.Label([
+                                html.I(className="fas fa-tag", style={'marginRight': '6px', 'fontSize': '12px'}),
+                                "Model Name"
+                            ], style={'fontWeight': '600', 'marginBottom': '8px', 'fontSize': '13px'}),
                             dcc.Dropdown(
                                 id="filter-train-model-name",
                                 placeholder="Select model...",
                                 clearable=True,
                                 searchable=True
                             ),
-                        ], width=4),
+                        ], md=3),
                         dbc.Col([
-                            dbc.Label("Manufacturer", style={'fontWeight': '500', 'marginBottom': '8px'}),
+                            dbc.Label([
+                                html.I(className="fas fa-subway", style={'marginRight': '6px', 'fontSize': '12px'}),
+                                "Model Type"
+                            ], style={'fontWeight': '600', 'marginBottom': '8px', 'fontSize': '13px'}),
+                            dcc.Dropdown(
+                                id="filter-train-model-type",
+                                placeholder="Select type...",
+                                clearable=True,
+                                searchable=True
+                            ),
+                        ], md=3),
+                        dbc.Col([
+                            dbc.Label([
+                                html.I(className="fas fa-globe", style={'marginRight': '6px', 'fontSize': '12px'}),
+                                "Country"
+                            ], style={'fontWeight': '600', 'marginBottom': '8px', 'fontSize': '13px'}),
+                            dcc.Dropdown(
+                                id="filter-train-model-country",
+                                placeholder="Select country...",
+                                clearable=True,
+                                searchable=True
+                            ),
+                        ], md=3),
+                        dbc.Col([
+                            dbc.Label([
+                                html.I(className="fas fa-industry", style={'marginRight': '6px', 'fontSize': '12px'}),
+                                "Manufacturer"
+                            ], style={'fontWeight': '600', 'marginBottom': '8px', 'fontSize': '13px'}),
                             dcc.Dropdown(
                                 id="filter-train-model-manufacturer",
                                 placeholder="Select manufacturer...",
-                                clearable=True
+                                clearable=True,
+                                searchable=True
                             ),
-                        ], width=4),
+                        ], md=3),
+                    ], className="mb-3"),
+                    
+                    # Second Row: Routes and Action Buttons
+                    dbc.Row([
                         dbc.Col([
+                            dbc.Label([
+                                html.I(className="fas fa-route", style={'marginRight': '6px', 'fontSize': '12px'}),
+                                "Assigned Routes"
+                            ], style={'fontWeight': '600', 'marginBottom': '8px', 'fontSize': '13px'}),
+                            dcc.Dropdown(
+                                id="filter-train-model-routes",
+                                placeholder="Select route...",
+                                clearable=True,
+                                searchable=True
+                            ),
+                        ], md=6),
+                        dbc.Col([
+                            dbc.Label("\u00A0", style={'marginBottom': '8px'}),
                             dbc.Button([
                                 html.I(className="fas fa-search", style={'marginRight': '8px'}),
-                                "Apply Filter"
-                            ], id="apply-train-model-filter", style={**BUTTON_PRIMARY, 'marginTop': '28px', 'width': '100%'})
-                        ], width=4),
+                                "Apply Filters"
+                            ], id="apply-train-model-filter", color="primary", className="w-100"),
+                        ], md=3),
+                        dbc.Col([
+                            dbc.Label("\u00A0", style={'marginBottom': '8px'}),
+                            dbc.Button([
+                                html.I(className="fas fa-times-circle", style={'marginRight': '8px'}),
+                                "Clear All"
+                            ], id="clear-train-model-filters", color="secondary", outline=True, className="w-100"),
+                        ], md=3),
                     ])
-                ], style={'padding': '20px'})
+                ], style={'padding': '24px'})
             ], style={
                 'background': COLORS['surface'],
                 'borderRadius': '16px',
-                'boxShadow': '0 4px 16px rgba(0,0,0,0.08)',
+                'boxShadow': '0 4px 12px rgba(0,0,0,0.06)',
                 'border': f'1px solid {COLORS["border"]}',
                 'marginBottom': '24px'
             }),
 
-            # Train Models Table
+            # Enhanced Train Models Table with Modern Card Design
             html.Div([
+                # Table Header
                 html.Div([
-                    html.I(className="fas fa-list", style={'marginRight': '10px', 'color': COLORS['primary']}),
-                    html.H5("All Train Models", style={'display': 'inline', 'margin': '0', 'fontWeight': '600'})
-                ], style={'padding': '20px', 'borderBottom': f'1px solid {COLORS["border"]}'}),
-                html.Div([
-                    html.Div(id="train-models-table", style={'minHeight': '300px'})
-                ], style={'padding': '20px'})
+                    html.Div([
+                        html.I(className="fas fa-table", style={
+                            'marginRight': '10px',
+                            'color': COLORS['primary'],
+                            'fontSize': '18px'
+                        }),
+                        html.H5("All Train Models", style={
+                            'margin': '0',
+                            'fontWeight': '600',
+                            'fontSize': '18px',
+                            'color': COLORS['text_primary']
+                        })
+                    ], style={'display': 'flex', 'alignItems': 'center'}),
+                    html.Span([
+                        html.I(className="fas fa-info-circle", style={
+                            'marginRight': '6px',
+                            'color': COLORS['info']
+                        }),
+                        "Click rows for details"
+                    ], style={'fontSize': '13px', 'color': COLORS['text_secondary']})
+                ], style={
+                    'display': 'flex',
+                    'justifyContent': 'space-between',
+                    'alignItems': 'center',
+                    'padding': '20px 24px',
+                    'borderBottom': f'1px solid {COLORS["border"]}',
+                    'background': '#fafbfc'
+                }),
+                
+                # Table Content
+                html.Div(id="train-models-table", style={
+                    'padding': '20px',
+                    'minHeight': '400px',
+                    'background': COLORS['surface']
+                })
             ], style={
                 'background': COLORS['surface'],
                 'borderRadius': '16px',
-                'boxShadow': '0 4px 16px rgba(0,0,0,0.08)',
+                'boxShadow': '0 4px 12px rgba(0,0,0,0.06)',
                 'border': f'1px solid {COLORS["border"]}'
             }),
 
-            # Add/Edit Modal
+            # Enhanced Add/Edit Modal with Modern Design
             dbc.Modal([
-                dbc.ModalHeader(dbc.ModalTitle(id="train-model-modal-title")),
+                dbc.ModalHeader([
+                    html.I(className="fas fa-train", style={
+                        'fontSize': '20px',
+                        'color': COLORS['primary'],
+                        'marginRight': '10px'
+                    }),
+                    dbc.ModalTitle(id="train-model-modal-title", style={
+                        'fontSize': '20px',
+                        'fontWeight': '600'
+                    })
+                ], style={
+                    'borderBottom': f'1px solid {COLORS["border"]}',
+                    'padding': '20px 24px',
+                    'background': '#fafbfc'
+                }),
                 dbc.ModalBody([
-                    dbc.Row([
-                        dbc.Col([
-                            dbc.Label("Model Name *", style={'fontWeight': '500', 'marginBottom': '8px'}),
-                            dbc.Input(id="train-model-name", type="text", placeholder="e.g., S12 Express"),
-                        ], width=6),
-                        dbc.Col([
-                            dbc.Label("Manufacturer *", style={'fontWeight': '500', 'marginBottom': '8px'}),
-                            dbc.Input(id="train-model-manufacturer", type="text", placeholder="e.g., CRRC"),
-                        ], width=6),
-                    ], className="mb-3"),
-                    dbc.Row([
-                        dbc.Col([
-                            dbc.Label("Total Seats *", style={'fontWeight': '500', 'marginBottom': '8px'}),
-                            dbc.Input(id="train-model-seats", type="number", placeholder="e.g., 500"),
-                        ], width=4),
-                        dbc.Col([
-                            dbc.Label("First Class Seats", style={'fontWeight': '500', 'marginBottom': '8px'}),
-                            dbc.Input(id="train-model-first-seats", type="number", placeholder="e.g., 50"),
-                        ], width=4),
-                        dbc.Col([
-                            dbc.Label("Second Class Seats", style={'fontWeight': '500', 'marginBottom': '8px'}),
-                            dbc.Input(id="train-model-second-seats", type="number", placeholder="e.g., 150"),
-                        ], width=4),
-                    ], className="mb-3"),
-                    dbc.Row([
-                        dbc.Col([
-                            dbc.Label("Third Class Seats", style={'fontWeight': '500', 'marginBottom': '8px'}),
-                            dbc.Input(id="train-model-third-seats", type="number", placeholder="e.g., 300"),
-                        ], width=4),
-                        dbc.Col([
-                            dbc.Label("Max Speed (km/h)", style={'fontWeight': '500', 'marginBottom': '8px'}),
-                            dbc.Input(id="train-model-max-speed", type="number", placeholder="e.g., 120"),
-                        ], width=4),
-                        dbc.Col([
-                            dbc.Label("Year of Manufacture", style={'fontWeight': '500', 'marginBottom': '8px'}),
-                            dbc.Input(id="train-model-year", type="number", placeholder="e.g., 2020"),
-                        ], width=4),
-                    ]),
-                ]),
+                    # Basic Information Section
+                    html.Div([
+                        html.H6([
+                            html.I(className="fas fa-info-circle", style={'marginRight': '8px'}),
+                            "Basic Information"
+                        ], style={'color': COLORS['primary'], 'fontWeight': '600', 'marginBottom': '16px', 'fontSize': '16px'}),
+                        
+                        dbc.Row([
+                            dbc.Col([
+                                dbc.Label("Model ID *", style={'fontWeight': '600', 'fontSize': '13px', 'marginBottom': '6px'}),
+                                dbc.Input(id="train-model-id", type="text", placeholder="e.g., S12EXP", maxLength=10),
+                                html.Small("Uppercase letters & numbers, max 10 chars", className="text-muted")
+                            ], md=4),
+                            dbc.Col([
+                                dbc.Label("Model Name *", style={'fontWeight': '600', 'fontSize': '13px', 'marginBottom': '6px'}),
+                                dbc.Input(id="train-model-name", type="text", placeholder="e.g., S12 Express")
+                            ], md=4),
+                            dbc.Col([
+                                dbc.Label("Model Type *", style={'fontWeight': '600', 'fontSize': '13px', 'marginBottom': '6px'}),
+                                dbc.Input(id="train-model-type", type="text", placeholder="e.g., EMU")
+                            ], md=4),
+                        ], className="mb-3"),
+                        
+                        dbc.Row([
+                            dbc.Col([
+                                dbc.Label("Manufacturer *", style={'fontWeight': '600', 'fontSize': '13px', 'marginBottom': '6px'}),
+                                dbc.Input(id="train-model-manufacturer", type="text", placeholder="e.g., CRRC Corporation")
+                            ], md=6),
+                            dbc.Col([
+                                dbc.Label("Country of Origin *", style={'fontWeight': '600', 'fontSize': '13px', 'marginBottom': '6px'}),
+                                dbc.Input(id="train-model-country", type="text", placeholder="e.g., China")
+                            ], md=6),
+                        ]),
+                    ], style={
+                        'padding': '20px',
+                        'background': '#f8f9fa',
+                        'borderRadius': '8px',
+                        'marginBottom': '20px',
+                        'border': f'1px solid {COLORS["border"]}'
+                    }),
+                    
+                    # Capacity Information Section
+                    html.Div([
+                        html.H6([
+                            html.I(className="fas fa-users", style={'marginRight': '8px'}),
+                            "Capacity Details"
+                        ], style={'color': COLORS['info'], 'fontWeight': '600', 'marginBottom': '16px', 'fontSize': '16px'}),
+                        
+                        dbc.Row([
+                            dbc.Col([
+                                dbc.Label("Operational Units *", style={'fontWeight': '600', 'fontSize': '13px', 'marginBottom': '6px'}),
+                                dbc.Input(id="train-model-operational-units", type="number", placeholder="e.g., 5", min=0)
+                            ], md=4),
+                            dbc.Col([
+                                dbc.Label("Compartments/Unit *", style={'fontWeight': '600', 'fontSize': '13px', 'marginBottom': '6px'}),
+                                dbc.Input(id="train-model-compartments-unit", type="number", placeholder="e.g., 4", min=1)
+                            ], md=4),
+                            dbc.Col([
+                                dbc.Label("Total Compartments *", style={'fontWeight': '600', 'fontSize': '13px', 'marginBottom': '6px'}),
+                                dbc.Input(id="train-model-total-compartments", type="number", placeholder="e.g., 20", min=0)
+                            ], md=4),
+                        ], className="mb-3"),
+                        
+                        dbc.Row([
+                            dbc.Col([
+                                dbc.Label("Seating/Compartment *", style={'fontWeight': '600', 'fontSize': '13px', 'marginBottom': '6px'}),
+                                dbc.Input(id="train-model-seating-capacity", type="number", placeholder="e.g., 60", min=0)
+                            ], md=4),
+                            dbc.Col([
+                                dbc.Label("Standing/Compartment *", style={'fontWeight': '600', 'fontSize': '13px', 'marginBottom': '6px'}),
+                                dbc.Input(id="train-model-standing-capacity", type="number", placeholder="e.g., 40", min=0)
+                            ], md=4),
+                            dbc.Col([
+                                dbc.Label("Total/Compartment *", style={'fontWeight': '600', 'fontSize': '13px', 'marginBottom': '6px'}),
+                                dbc.Input(id="train-model-total-capacity", type="number", placeholder="e.g., 100", min=0)
+                            ], md=4),
+                        ]),
+                    ], style={
+                        'padding': '20px',
+                        'background': '#f0f8ff',
+                        'borderRadius': '8px',
+                        'marginBottom': '20px',
+                        'border': f'1px solid {COLORS["border"]}'
+                    }),
+                    
+                    # Route Assignments Section
+                    html.Div([
+                        html.H6([
+                            html.I(className="fas fa-route", style={'marginRight': '8px'}),
+                            "Route Assignments"
+                        ], style={'color': COLORS['success'], 'fontWeight': '600', 'marginBottom': '12px', 'fontSize': '16px'}),
+                        html.P("Select all routes where this train model operates", 
+                               style={'fontSize': '13px', 'color': COLORS['text_secondary'], 'marginBottom': '12px'}),
+                        dbc.Checklist(
+                            id="train-model-routes",
+                            options=[
+                                {"label": "R01", "value": "r01"},
+                                {"label": "R02", "value": "r02"},
+                                {"label": "R03", "value": "r03"},
+                                {"label": "R04", "value": "r04"},
+                                {"label": "R05", "value": "r05"},
+                                {"label": "R06", "value": "r06"},
+                                {"label": "R07", "value": "r07"},
+                                {"label": "R08", "value": "r08"},
+                                {"label": "R09", "value": "r09"},
+                            ],
+                            value=[],
+                            inline=True,
+                            style={'fontSize': '14px'}
+                        ),
+                    ], style={
+                        'padding': '20px',
+                        'background': '#f0fff4',
+                        'borderRadius': '8px',
+                        'border': f'1px solid {COLORS["border"]}'
+                    }),
+                ], style={'padding': '24px'}),
+                
                 dbc.ModalFooter([
-                    dbc.Button("Cancel", id="cancel-train-model-btn", color="secondary", outline=True),
-                    dbc.Button("Save", id="save-train-model-btn", style=BUTTON_PRIMARY),
-                ])
-            ], id="train-model-modal", size="lg", is_open=False),
+                    dbc.Button([
+                        html.I(className="fas fa-times", style={'marginRight': '8px'}),
+                        "Cancel"
+                    ], id="cancel-train-model-btn", color="secondary", outline=True),
+                    dbc.Button([
+                        html.I(className="fas fa-save", style={'marginRight': '8px'}),
+                        "Save Model"
+                    ], id="save-train-model-btn", color="primary"),
+                ], style={
+                    'borderTop': f'1px solid {COLORS["border"]}',
+                    'padding': '16px 24px',
+                    'background': '#fafbfc'
+                })
+            ], id="train-model-modal", size="xl", is_open=False),
 
             # Delete Confirmation Modal
             dbc.Modal([
@@ -3143,6 +3367,420 @@ def load_routes(pathname, token):
             {'if': {'row_index': 'odd'}, 'backgroundColor': '#f8fafc'}
         ]
     )
+
+# ============= TRAIN MODELS CALLBACKS =============
+@callback(
+    Output("train-models-table", "children"),
+    [Input("url", "pathname"),
+     Input("apply-train-model-filter", "n_clicks")],
+    [State("token-store", "data"),
+     State("filter-train-model-name", "value"),
+     State("filter-train-model-type", "value"),
+     State("filter-train-model-country", "value"),
+     State("filter-train-model-manufacturer", "value"),
+     State("filter-train-model-routes", "value")]
+)
+def load_train_models(pathname, n_clicks, token, model_name_filter, model_type_filter, 
+                      country_filter, manufacturer_filter, routes_filter):
+    if pathname != "/train-models" or not token:
+        return html.P("Loading...")
+
+    train_models = make_api_request("/train-models", token=token)
+    if not train_models:
+        return html.Div([
+            html.I(className="fas fa-info-circle", style={
+                'fontSize': '48px',
+                'color': COLORS['text_secondary'],
+                'display': 'block',
+                'textAlign': 'center',
+                'marginBottom': '16px'
+            }),
+            html.P("No train models found", style={
+                'textAlign': 'center',
+                'color': COLORS['text_secondary'],
+                'fontSize': '16px'
+            })
+        ], style={'padding': '40px'})
+
+    df = pd.DataFrame(train_models)
+    
+    # Apply filters
+    if model_name_filter:
+        df = df[df['model_name'] == model_name_filter]
+    
+    if model_type_filter:
+        df = df[df['model_type'] == model_type_filter]
+    
+    if country_filter:
+        df = df[df['country_of_origin'] == country_filter]
+    
+    if manufacturer_filter:
+        df = df[df['manufacturer'] == manufacturer_filter]
+    
+    if routes_filter:
+        # Filter by route boolean column (r01-r09)
+        route_col = routes_filter.lower()  # e.g., 'R01' -> 'r01'
+        if route_col in df.columns:
+            df = df[df[route_col] == True]
+    
+    if df.empty:
+        return html.Div([
+            html.I(className="fas fa-search", style={
+                'fontSize': '48px',
+                'color': COLORS['text_secondary'],
+                'display': 'block',
+                'textAlign': 'center',
+                'marginBottom': '16px'
+            }),
+            html.P("No train models match your filters", style={
+                'textAlign': 'center',
+                'color': COLORS['text_secondary'],
+                'fontSize': '16px'
+            })
+        ], style={'padding': '40px'})
+    
+    # Create assigned routes column by combining r01-r09 boolean values
+    route_cols = ['r01', 'r02', 'r03', 'r04', 'r05', 'r06', 'r07', 'r08', 'r09']
+    df['assigned_routes_display'] = df.apply(
+        lambda row: ', '.join([col.upper() for col in route_cols if col in df.columns and row.get(col, False)]),
+        axis=1
+    )
+    
+    # Select and rename columns for display
+    display_columns = [
+        'model_id', 'model_name', 'model_type', 'manufacturer', 
+        'country_of_origin', 'assigned_routes_display', 'operational_units', 
+        'compartments_per_unit', 'total_compartments_assigned_per_model', 
+        'seating_passengers_per_compartment', 'standing_passengers_per_compartment', 
+        'total_passengers_per_compartment'
+    ]
+    
+    # Filter to only show existing columns
+    display_columns = [col for col in display_columns if col in df.columns]
+    df_display = df[display_columns]
+    
+    # Create column mapping for better display names
+    column_names = {
+        'model_id': 'Model ID',
+        'model_name': 'Model Name',
+        'model_type': 'Model Type',
+        'manufacturer': 'Manufacturer',
+        'country_of_origin': 'Country of Origin',
+        'assigned_routes_display': 'Assigned Routes',
+        'operational_units': 'Operational Units',
+        'compartments_per_unit': 'Compartments/Unit',
+        'total_compartments_assigned_per_model': 'Total Compartments',
+        'seating_passengers_per_compartment': 'Seats/Compartment',
+        'standing_passengers_per_compartment': 'Standing/Compartment',
+        'total_passengers_per_compartment': 'Total/Compartment'
+    }
+    
+    return dash_table.DataTable(
+        data=df_display.to_dict('records'),
+        columns=[{"name": column_names.get(i, i), "id": i} for i in df_display.columns],
+        style_cell={
+            'textAlign': 'left',
+            'padding': '12px',
+            'fontSize': '14px',
+            'fontFamily': 'Roboto, sans-serif'
+        },
+        style_header={
+            'backgroundColor': COLORS['primary'],
+            'color': 'white',
+            'fontWeight': '600',
+            'fontSize': '14px',
+            'padding': '14px',
+            'border': 'none'
+        },
+        style_data={
+            'border': 'none',
+            'borderBottom': f'1px solid {COLORS["border"]}'
+        },
+        style_data_conditional=[
+            {
+                'if': {'row_index': 'odd'},
+                'backgroundColor': '#f8fafc'
+            },
+            {
+                'if': {'row_index': 'even'},
+                'backgroundColor': 'white'
+            }
+        ],
+        style_table={
+            'overflowX': 'auto'
+        },
+        page_size=10,
+        sort_action='native',
+        filter_action='native'
+    )
+
+@callback(
+    Output("filter-train-model-name", "options"),
+    Input("url", "pathname"),
+    State("token-store", "data")
+)
+def populate_model_name_filter(pathname, token):
+    if pathname != "/train-models" or not token:
+        return []
+
+    train_models = make_api_request("/train-models", token=token)
+    if not train_models:
+        return []
+    
+    # Get unique model names
+    model_names = sorted(list(set([model['model_name'] for model in train_models if model.get('model_name')])))
+    return [{"label": name, "value": name} for name in model_names]
+
+@callback(
+    Output("filter-train-model-type", "options"),
+    Input("url", "pathname"),
+    State("token-store", "data")
+)
+def populate_model_type_filter(pathname, token):
+    if pathname != "/train-models" or not token:
+        return []
+
+    train_models = make_api_request("/train-models", token=token)
+    if not train_models:
+        return []
+    
+    # Get unique model types
+    model_types = sorted(list(set([model['model_type'] for model in train_models if model.get('model_type')])))
+    return [{"label": mtype, "value": mtype} for mtype in model_types]
+
+@callback(
+    Output("filter-train-model-country", "options"),
+    Input("url", "pathname"),
+    State("token-store", "data")
+)
+def populate_country_filter(pathname, token):
+    if pathname != "/train-models" or not token:
+        return []
+
+    train_models = make_api_request("/train-models", token=token)
+    if not train_models:
+        return []
+    
+    # Get unique countries
+    countries = sorted(list(set([model['country_of_origin'] for model in train_models if model.get('country_of_origin')])))
+    return [{"label": country, "value": country} for country in countries]
+
+@callback(
+    Output("filter-train-model-manufacturer", "options"),
+    Input("url", "pathname"),
+    State("token-store", "data")
+)
+def populate_manufacturer_filter(pathname, token):
+    if pathname != "/train-models" or not token:
+        return []
+
+    train_models = make_api_request("/train-models", token=token)
+    if not train_models:
+        return []
+    
+    # Get unique manufacturers
+    manufacturers = sorted(list(set([model['manufacturer'] for model in train_models if model.get('manufacturer')])))
+    return [{"label": mfr, "value": mfr} for mfr in manufacturers]
+
+@callback(
+    Output("filter-train-model-routes", "options"),
+    Input("url", "pathname"),
+    State("token-store", "data")
+)
+def populate_routes_filter(pathname, token):
+    if pathname != "/train-models" or not token:
+        return []
+
+    train_models = make_api_request("/train-models", token=token)
+    if not train_models:
+        return []
+    
+    # Get available routes from the boolean columns (r01-r09)
+    df = pd.DataFrame(train_models)
+    route_cols = ['r01', 'r02', 'r03', 'r04', 'r05', 'r06', 'r07', 'r08', 'r09']
+    
+    # Find which route columns exist and have at least one True value
+    available_routes = []
+    for col in route_cols:
+        if col in df.columns and df[col].any():
+            available_routes.append(col.upper())
+    
+    # Return all routes R01-R09 as options (even if not yet assigned)
+    all_routes = ['R01', 'R02', 'R03', 'R04', 'R05', 'R06', 'R07', 'R08', 'R09']
+    return [{"label": route, "value": route} for route in all_routes]
+
+# ============= CLEAR FILTERS CALLBACK =============
+@callback(
+    [Output("filter-train-model-name", "value"),
+     Output("filter-train-model-type", "value"),
+     Output("filter-train-model-country", "value"),
+     Output("filter-train-model-manufacturer", "value"),
+     Output("filter-train-model-routes", "value")],
+    Input("clear-train-model-filters", "n_clicks"),
+    prevent_initial_call=True
+)
+def clear_train_model_filters(n_clicks):
+    """Clear all train model filters"""
+    return None, None, None, None, None
+
+# ============= OPEN ADD MODEL MODAL CALLBACK =============
+@callback(
+    [Output("train-model-modal", "is_open"),
+     Output("train-model-modal-title", "children")],
+    [Input("add-train-model-btn", "n_clicks"),
+     Input("cancel-train-model-btn", "n_clicks"),
+     Input("save-train-model-btn", "n_clicks")],
+    State("train-model-modal", "is_open"),
+    prevent_initial_call=True
+)
+def toggle_train_model_modal(add_clicks, cancel_clicks, save_clicks, is_open):
+    """Toggle train model add/edit modal"""
+    ctx = dash.callback_context
+    if not ctx.triggered:
+        return is_open, "Add New Train Model"
+    
+    button_id = ctx.triggered[0]["prop_id"].split(".")[0]
+    
+    if button_id == "add-train-model-btn":
+        return True, "Add New Train Model"
+    elif button_id in ["cancel-train-model-btn", "save-train-model-btn"]:
+        return False, "Add New Train Model"
+    
+    return is_open, "Add New Train Model"
+
+# ============= SAVE NEW TRAIN MODEL CALLBACK =============
+@callback(
+    [Output("train-model-alert", "children"),
+     Output("train-model-alert", "is_open"),
+     Output("train-model-alert", "color"),
+     Output("train-model-id", "value"),
+     Output("train-model-name", "value"),
+     Output("train-model-type", "value"),
+     Output("train-model-manufacturer", "value"),
+     Output("train-model-country", "value"),
+     Output("train-model-operational-units", "value"),
+     Output("train-model-compartments-unit", "value"),
+     Output("train-model-total-compartments", "value"),
+     Output("train-model-seating-capacity", "value"),
+     Output("train-model-standing-capacity", "value"),
+     Output("train-model-total-capacity", "value"),
+     Output("train-model-routes", "value"),
+     Output("train-models-table", "children", allow_duplicate=True)],
+    Input("save-train-model-btn", "n_clicks"),
+    [State("train-model-id", "value"),
+     State("train-model-name", "value"),
+     State("train-model-type", "value"),
+     State("train-model-manufacturer", "value"),
+     State("train-model-country", "value"),
+     State("train-model-operational-units", "value"),
+     State("train-model-compartments-unit", "value"),
+     State("train-model-total-compartments", "value"),
+     State("train-model-seating-capacity", "value"),
+     State("train-model-standing-capacity", "value"),
+     State("train-model-total-capacity", "value"),
+     State("train-model-routes", "value"),
+     State("token-store", "data")],
+    prevent_initial_call=True
+)
+def save_train_model(n_clicks, model_id, model_name, model_type, manufacturer, country,
+                     operational_units, compartments_unit, total_compartments,
+                     seating_capacity, standing_capacity, total_capacity, routes, token):
+    """Save new train model to database"""
+    if not n_clicks or not token:
+        return no_update, False, "info", *([no_update] * 13)
+    
+    # Validation
+    if not all([model_id, model_name, model_type, manufacturer, country]):
+        return "Please fill in all required fields marked with *", True, "danger", *([no_update] * 13)
+    
+    if not all([operational_units is not None, compartments_unit, total_compartments,
+                seating_capacity is not None, standing_capacity is not None, total_capacity is not None]):
+        return "Please fill in all capacity fields", True, "danger", *([no_update] * 13)
+    
+    # Validate model_id format (uppercase letters and numbers only, max 10 chars)
+    import re
+    if not re.match(r'^[A-Z0-9]{1,10}$', model_id):
+        return "Model ID must be 1-10 uppercase letters/numbers only", True, "danger", *([no_update] * 13)
+    
+    # Build route assignment dictionary
+    route_data = {
+        'r01': 'r01' in (routes or []),
+        'r02': 'r02' in (routes or []),
+        'r03': 'r03' in (routes or []),
+        'r04': 'r04' in (routes or []),
+        'r05': 'r05' in (routes or []),
+        'r06': 'r06' in (routes or []),
+        'r07': 'r07' in (routes or []),
+        'r08': 'r08' in (routes or []),
+        'r09': 'r09' in (routes or []),
+    }
+    
+    # Prepare data payload
+    data = {
+        "model_id": model_id,
+        "model_name": model_name,
+        "model_type": model_type,
+        "manufacturer": manufacturer,
+        "country_of_origin": country,
+        "operational_units": int(operational_units),
+        "compartments_per_unit": int(compartments_unit),
+        "total_compartments_assigned_per_model": int(total_compartments),
+        "seating_passengers_per_compartment": int(seating_capacity),
+        "standing_passengers_per_compartment": int(standing_capacity),
+        "total_passengers_per_compartment": int(total_capacity),
+        **route_data
+    }
+    
+    # Make API request
+    result = make_api_request("/train-models", method="POST", token=token, data=data)
+    
+    if result and not isinstance(result, dict) or (isinstance(result, dict) and 'error' not in result):
+        # Success - clear form and reload table
+        train_models = make_api_request("/train-models", token=token)
+        if train_models:
+            df = pd.DataFrame(train_models)
+            # Create assigned routes display column
+            route_cols = ['r01', 'r02', 'r03', 'r04', 'r05', 'r06', 'r07', 'r08', 'r09']
+            df['assigned_routes_display'] = df.apply(
+                lambda row: ', '.join([col.upper() for col in route_cols if row.get(col)]),
+                axis=1
+            )
+            
+            table = dash_table.DataTable(
+                data=df[['model_id', 'model_name', 'model_type', 'manufacturer', 'country_of_origin', 
+                        'operational_units', 'assigned_routes_display']].to_dict('records'),
+                columns=[
+                    {'name': 'Model ID', 'id': 'model_id'},
+                    {'name': 'Model Name', 'id': 'model_name'},
+                    {'name': 'Type', 'id': 'model_type'},
+                    {'name': 'Manufacturer', 'id': 'manufacturer'},
+                    {'name': 'Country', 'id': 'country_of_origin'},
+                    {'name': 'Units', 'id': 'operational_units'},
+                    {'name': 'Assigned Routes', 'id': 'assigned_routes_display'},
+                ],
+                style_table={'overflowX': 'auto'},
+                style_cell={'textAlign': 'left', 'padding': '12px'},
+                style_header={
+                    'backgroundColor': COLORS['primary'],
+                    'color': 'white',
+                    'fontWeight': '600',
+                    'border': 'none'
+                },
+                style_data_conditional=[
+                    {'if': {'row_index': 'odd'}, 'backgroundColor': '#f8f9fa'}
+                ]
+            )
+        else:
+            table = html.P("No train models found", style={'textAlign': 'center', 'padding': '20px'})
+        
+        return (
+            f"Train model '{model_name}' added successfully!", True, "success",
+            "", "", "", "", "", None, None, None, None, None, None, [], table
+        )
+    else:
+        error_msg = result.get('message', 'Failed to add train model') if isinstance(result, dict) else 'Failed to add train model'
+        return error_msg, True, "danger", *([no_update] * 13)
+
 @callback(
     [Output("ticket-count", "children"),
      Output("ticket-count-store", "data")],
