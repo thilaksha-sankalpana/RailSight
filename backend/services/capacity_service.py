@@ -220,6 +220,14 @@ class CapacityService:
     ):
         """
         Initialize segment capacity records for a schedule
+        
+        CRITICAL: We only create capacity records for CONSECUTIVE station pairs,
+        not all possible combinations. For a route A→B→C→D, we only track:
+        - A→B, B→C, C→D (3 segments)
+        Not all 6 combinations (A→B, A→C, A→D, B→C, B→D, C→D)
+        
+        Why? When booking A→D, we increment A→B, B→C, and C→D.
+        We don't need a separate A→D capacity record.
 
         Args:
             db: Database session
@@ -227,19 +235,57 @@ class CapacityService:
             schedule: TrainSchedule object
             max_first/second/third: Maximum capacity per class
         """
-        # Get all station-to-station segments for this schedule
-        segments = db.query(TrainScheduleByStation).filter(
+        # Get all segments ordered by departure time
+        all_segments = db.query(TrainScheduleByStation).filter(
             TrainScheduleByStation.train_schedule_id == schedule.train_schedule_id
         ).order_by(TrainScheduleByStation.origin_departure).all()
 
-        if not segments:
+        if not all_segments:
             logger.warning(
                 f"No segments found for schedule {schedule.train_schedule_id}"
             )
             return
 
-        # Create segment capacity records
-        for idx, segment in enumerate(segments, start=1):
+        # Build the station sequence (same logic as find_overlapping_segments)
+        ordered_by_arrival = sorted(all_segments, key=lambda seg: seg.destination_departure)
+        station_sequence = []
+        seen_stations = set()
+        
+        # Add the first origin (starting station)
+        first_origin = all_segments[0].origin_station_id
+        station_sequence.append(first_origin)
+        seen_stations.add(first_origin)
+        
+        # Add destinations in arrival order
+        for seg in ordered_by_arrival:
+            if seg.destination_station_id not in seen_stations:
+                station_sequence.append(seg.destination_station_id)
+                seen_stations.add(seg.destination_station_id)
+        
+        # Now create capacity records ONLY for consecutive pairs
+        # For route [A, B, C, D], create: A→B, B→C, C→D
+        consecutive_segments = []
+        segment_lookup = {
+            (seg.origin_station_id, seg.destination_station_id): seg
+            for seg in all_segments
+        }
+        
+        for i in range(len(station_sequence) - 1):
+            origin_id = station_sequence[i]
+            dest_id = station_sequence[i + 1]
+            
+            # Find the segment data from TrainScheduleByStation
+            segment = segment_lookup.get((origin_id, dest_id))
+            if not segment:
+                logger.warning(
+                    f"Consecutive segment {origin_id}→{dest_id} not found in schedule data"
+                )
+                continue
+            
+            consecutive_segments.append(segment)
+        
+        # Create segment capacity records for consecutive segments only
+        for idx, segment in enumerate(consecutive_segments, start=1):
             segment_capacity = SegmentCapacity(
                 schedule_capacity_id=schedule_capacity.id,
                 schedule_id=schedule.train_schedule_id,
@@ -257,8 +303,9 @@ class CapacityService:
             db.add(segment_capacity)
 
         logger.info(
-            f"Initialized {len(segments)} segment capacity records for "
-            f"{schedule.train_schedule_id} on {schedule_capacity.schedule_date}"
+            f"Initialized {len(consecutive_segments)} consecutive segment capacity records for "
+            f"{schedule.train_schedule_id} on {schedule_capacity.schedule_date} "
+            f"(Route has {len(station_sequence)} stations)"
         )
 
     @staticmethod
@@ -308,13 +355,18 @@ class CapacityService:
         destination_station_id: str
     ) -> List[SegmentCapacity]:
         """
-        Find all segments that overlap with a booking from origin to destination
+        Find ALL consecutive segments between origin and destination
         
-        The segments are ordered by origin_departure time to ensure we get the correct
-        sequential segments from origin to destination station.
-
-        Example: Booking from B to E on route A-B-C-D-E-F
-        Returns segments: [B-C, C-D, D-E]
+        SIMPLIFIED LOGIC:
+        A passenger traveling from A to D occupies seats on consecutive segments:
+        A→B, B→C, C→D
+        
+        We find these by:
+        1. Getting all segment capacity records (which are already consecutive-only)
+        2. Ordering them by segment_order
+        3. Finding where origin appears as origin_station
+        4. Finding where destination appears as destination_station  
+        5. Returning all segments in between (inclusive)
 
         Args:
             db: Database session
@@ -323,91 +375,49 @@ class CapacityService:
             destination_station_id: Booking destination station
 
         Returns:
-            List of SegmentCapacity objects that overlap with the booking
+            List of consecutive SegmentCapacity objects for the journey
         """
-        # Get the schedule_id from the schedule_capacity to query the original schedule segments
-        schedule_capacity = db.query(ScheduleCapacity).filter(
-            ScheduleCapacity.id == schedule_capacity_id
-        ).first()
-        
-        if not schedule_capacity:
-            logger.error(f"Schedule capacity {schedule_capacity_id} not found")
-            return []
-        
-        # Get the schedule segments ordered by departure time from TrainScheduleByStation
-        schedule_segments = db.query(TrainScheduleByStation).filter(
-            TrainScheduleByStation.train_schedule_id == schedule_capacity.schedule_id
-        ).order_by(TrainScheduleByStation.origin_departure).all()
-        
-        if not schedule_segments:
-            logger.warning(f"No schedule segments found for schedule {schedule_capacity.schedule_id}")
-            return []
-        
-        # Get all capacity segments for this schedule capacity
+        # Get ALL segment capacity records for this schedule, ordered by segment_order
         all_segments = db.query(SegmentCapacity).filter(
             SegmentCapacity.schedule_capacity_id == schedule_capacity_id
+        ).order_by(
+            SegmentCapacity.segment_order
         ).all()
         
-        # Create a lookup map for capacity segments by (origin_id, destination_id)
-        segment_map = {
-            (seg.origin_station_id, seg.destination_station_id): seg 
-            for seg in all_segments
-        }
+        if not all_segments:
+            logger.warning(f"No segment capacity records found for schedule_capacity_id {schedule_capacity_id}")
+            return []
         
-        # Create a lookup map for capacity segments by (origin_id, destination_id)
-        segment_map = {
-            (seg.origin_station_id, seg.destination_station_id): seg 
-            for seg in all_segments
-        }
-
-        # Now walk through schedule segments in departure order and collect overlapping ones
-        overlapping = []
-        collecting = False
+        # Find the start and end indices
+        start_idx = None
+        end_idx = None
         
-        for schedule_seg in schedule_segments:
-            # Start collecting when we find the origin station as the segment origin
-            if not collecting:
-                if schedule_seg.origin_station_id == origin_station_id:
-                    collecting = True
+        for idx, seg in enumerate(all_segments):
+            # Find segment where our journey starts (origin matches segment origin)
+            if seg.origin_station_id == origin_station_id and start_idx is None:
+                start_idx = idx
             
-            # If we're collecting, add the corresponding capacity segment
-            if collecting:
-                # Look up the capacity segment for this route segment
-                capacity_seg = segment_map.get(
-                    (schedule_seg.origin_station_id, schedule_seg.destination_station_id)
-                )
-                
-                if capacity_seg:
-                    overlapping.append(capacity_seg)
-                else:
-                    logger.warning(
-                        f"Capacity segment not found for {schedule_seg.origin_station_id} → "
-                        f"{schedule_seg.destination_station_id}"
-                    )
-                
-                # Stop when we reach the destination as the segment destination
-                if schedule_seg.destination_station_id == destination_station_id:
-                    break
-
-        if not overlapping:
-            logger.warning(
-                f"No segments found for {origin_station_id} → {destination_station_id}. "
-                f"Available segments: {[(seg.origin_station_id, seg.destination_station_id) for seg in schedule_segments]}"
-            )
-        elif overlapping and overlapping[-1].destination_station_id != destination_station_id:
+            # Find segment where our journey ends (destination matches segment destination)
+            if seg.destination_station_id == destination_station_id and start_idx is not None:
+                end_idx = idx
+                break  # Found the end, stop searching
+        
+        if start_idx is None or end_idx is None:
             logger.error(
-                f"Path incomplete for {origin_station_id} → {destination_station_id}. "
-                f"Last segment ends at: {overlapping[-1].destination_station_id}, "
-                f"Expected: {destination_station_id}, "
-                f"Collected {len(overlapping)} segments"
+                f"Could not find journey range for {origin_station_id} → {destination_station_id}. "
+                f"start_idx={start_idx}, end_idx={end_idx}"
             )
-
+            return []
+        
+        # Return all segments from start to end (inclusive)
+        overlapping_segments = all_segments[start_idx:end_idx + 1]
+        
         logger.debug(
-            f"Found {len(overlapping)} overlapping segments for booking "
+            f"Found {len(overlapping_segments)} consecutive segments for "
             f"{origin_station_id} → {destination_station_id}"
         )
-
-        return overlapping
+        
+        return overlapping_segments
 
     @staticmethod
     def can_book_ticket(
@@ -678,41 +688,34 @@ class CapacityService:
                 "total": first_capacity + second_capacity + third_capacity
             }
 
-        # Schedule capacity exists, find overlapping segments
-        overlapping_segments = CapacityService.find_overlapping_segments(
-            db,
-            schedule_capacity.id,
-            origin_station_id,
-            destination_station_id
-        )
+        # OPTIMIZED: Direct SQL query to find the exact segment and calculate available capacity
+        # This is much faster than fetching all segments and filtering in Python
+        segment = db.query(SegmentCapacity).filter(
+            and_(
+                SegmentCapacity.schedule_capacity_id == schedule_capacity.id,
+                SegmentCapacity.origin_station_id == origin_station_id,
+                SegmentCapacity.destination_station_id == destination_station_id
+            )
+        ).first()
 
-        if not overlapping_segments:
+        if not segment:
             return {
                 "first_class": 0,
                 "second_class": 0,
                 "third_class": 0,
-                "error": "No valid segments found for this route"
+                "error": "No valid segment found for this route"
             }
 
-        # Find bottleneck (segment with minimum available capacity)
-        min_first = min(
-            seg.max_first_class - seg.first_class_load
-            for seg in overlapping_segments
-        )
-        min_second = min(
-            seg.max_second_class - seg.second_class_load
-            for seg in overlapping_segments
-        )
-        min_third = min(
-            seg.max_third_class - seg.third_class_load
-            for seg in overlapping_segments
-        )
+        # Calculate available capacity (max - current load)
+        available_first = max(0, segment.max_first_class - segment.first_class_load)
+        available_second = max(0, segment.max_second_class - segment.second_class_load)
+        available_third = max(0, segment.max_third_class - segment.third_class_load)
 
         return {
-            "first_class": max(0, min_first),
-            "second_class": max(0, min_second),
-            "third_class": max(0, min_third),
-            "total": max(0, min_first) + max(0, min_second) + max(0, min_third)
+            "first_class": available_first,
+            "second_class": available_second,
+            "third_class": available_third,
+            "total": available_first + available_second + available_third
         }
 
     @staticmethod
