@@ -4,7 +4,9 @@ from pathlib import Path
 
 # Get project root
 project_root = Path(__file__).parent.absolute()
+frontend_path = project_root / 'frontend'
 sys.path.insert(0, str(project_root))
+sys.path.insert(0, str(frontend_path))
 
 def check_backend():
     """Check if backend is running"""
@@ -46,7 +48,7 @@ def main():
     print("Press CTRL+C to stop\n")
     
     try:
-        from frontend.app_full import app
+        from frontend.app import app
         app.run(debug=True, host="0.0.0.0", port=8050)
     except ImportError as e:
         print(f"\n❌ Failed to import dashboard: {e}")

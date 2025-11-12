@@ -10,14 +10,14 @@ from config.settings import API_URL
 logger = logging.getLogger(__name__)
 
 
-def make_api_request(endpoint, method="GET", token=None, data=None, timeout=5):
+def make_api_request(endpoint, token=None, method="GET", data=None, timeout=5):
     """
     API request handler with proper error handling
 
     Args:
         endpoint: API endpoint path (e.g., "/stations")
-        method: HTTP method (GET, POST, PUT, PATCH, DELETE)
         token: Authentication token dict with 'access_token' key
+        method: HTTP method (GET, POST, PUT, PATCH, DELETE)
         data: Request payload for POST/PUT/PATCH
         timeout: Request timeout in seconds
 
@@ -52,12 +52,23 @@ def make_api_request(endpoint, method="GET", token=None, data=None, timeout=5):
         
         if response.status_code in [200, 201]:
             return response.json()
+        elif response.status_code == 500:
+            logger.error(f"API Server Error 500: {response.text}")
+            try:
+                error_data = response.json()
+                return {"error": "server_error", "message": error_data.get("detail", "Internal server error"), "status_code": 500}
+            except:
+                return {"error": "server_error", "message": "Internal server error", "status_code": 500}
         else:
             logger.error(f"API Error {response.status_code}: {response.text}")
-            return None
+            try:
+                error_data = response.json()
+                return {"error": "api_error", "message": error_data.get("detail", response.text), "status_code": response.status_code}
+            except:
+                return {"error": "api_error", "message": response.text, "status_code": response.status_code}
     except requests.exceptions.Timeout:
         logger.error(f"Request timeout for {endpoint}")
-        return None
+        return {"error": "timeout", "message": f"Request timed out after {timeout} seconds"}
     except Exception as e:
         logger.error(f"API request failed: {e}")
-        return None
+        return {"error": "connection_error", "message": str(e)}

@@ -14,6 +14,10 @@ from typing import Optional, List
 from decimal import Decimal
 from contextlib import asynccontextmanager
 
+# Add project root to path FIRST
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
 from fastapi import FastAPI, HTTPException, Depends, status, Query
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,10 +25,7 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, and_, or_, desc, text
 from sqlalchemy.exc import IntegrityError
 from dotenv import load_dotenv
-
-# Add project root to path
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
+from backend.api_ai_predictions import router as ai_router
 
 # Load environment variables
 load_dotenv(Path(__file__).parent / ".env")
@@ -165,6 +166,9 @@ app.add_middleware(
 app.add_exception_handler(TCDAFSException, tcdafs_exception_handler)
 app.add_exception_handler(HTTPException, validation_exception_handler)
 app.add_exception_handler(Exception, general_exception_handler)
+
+# Include routers
+app.include_router(ai_router)
 
 # ============= DATABASE DEPENDENCY =============
 def get_db():
@@ -1646,7 +1650,9 @@ async def get_daily_schedules(
     limit: int = Query(100, le=500),
     db: Session = Depends(get_db)
 ):
-    """Get daily schedules for a specific date or range"""
+    """Get daily schedules for a specific date or range with AI predictions"""
+    from backend.ai_models import CompartmentPrediction
+    
     target_date = schedule_date or date.today()
 
     # Get day of week column name
@@ -1689,28 +1695,52 @@ async def get_daily_schedules(
 
     schedules = query.order_by(TrainSchedule.origin_departure).offset(skip).limit(limit).all()
 
-    # Build response with additional date context
+    # Build response with additional date context and AI predictions
+    schedules_with_predictions = []
+    for s in schedules:
+        # Get AI prediction for this schedule and date
+        prediction = db.query(CompartmentPrediction).filter(
+            CompartmentPrediction.schedule_id == s.train_schedule_id,
+            CompartmentPrediction.schedule_date == target_date,
+            CompartmentPrediction.is_active == 1
+        ).first()
+        
+        schedule_data = {
+            "train_schedule_id": s.train_schedule_id,
+            "train_schedule": s.train_schedule,
+            "route_id": s.route_id,
+            "origin_station_id": s.origin_station_id,
+            "origin_station": s.origin_station,
+            "origin_departure": s.origin_departure.strftime("%H:%M") if s.origin_departure else None,
+            "destination_station_id": s.destination_station_id,
+            "destination_station": s.destination_station,
+            "destination_departure": s.destination_departure.strftime("%H:%M") if s.destination_departure else None,
+            "status": s.status.name,
+            "prediction": None
+        }
+        
+        if prediction:
+            schedule_data["prediction"] = {
+                "prediction_id": prediction.id,
+                "predicted_first_class": prediction.predicted_first_class,
+                "predicted_second_class": prediction.predicted_second_class,
+                "predicted_third_class": prediction.predicted_third_class,
+                "total_compartments": prediction.total_compartments,
+                "expected_total_passengers": prediction.expected_total_passengers,
+                "confidence_score": float(prediction.confidence_score) if prediction.confidence_score else None,
+                "reasoning": prediction.reasoning,
+                "predicted_at": prediction.predicted_at.strftime("%Y-%m-%d %H:%M:%S") if prediction.predicted_at else None
+            }
+        
+        schedules_with_predictions.append(schedule_data)
+    
     return {
         "date": target_date.isoformat(),
         "day_of_week": target_date.strftime("%A"),
         "is_poya_day": is_poya,
         "is_holiday": is_holiday,
         "total_schedules": len(schedules),
-        "schedules": [
-            {
-                "train_schedule_id": s.train_schedule_id,
-                "train_schedule": s.train_schedule,
-                "route_id": s.route_id,
-                "origin_station_id": s.origin_station_id,
-                "origin_station": s.origin_station,
-                "origin_departure": s.origin_departure.strftime("%H:%M") if s.origin_departure else None,
-                "destination_station_id": s.destination_station_id,
-                "destination_station": s.destination_station,
-                "destination_departure": s.destination_departure.strftime("%H:%M") if s.destination_departure else None,
-                "status": s.status.name
-            }
-            for s in schedules
-        ]
+        "schedules": schedules_with_predictions
     }
 
 @app.patch("/daily-schedules/{schedule_id}/status")

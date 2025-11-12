@@ -1,18 +1,28 @@
 """
 FastAPI endpoints for AI-powered compartment prediction
 """
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import date, datetime, timedelta
 from pydantic import BaseModel
 
 from backend.db import get_db_session
+from backend.models import TrainSchedule
 from backend.services.ai_prediction_engine import CompartmentPredictionEngine
 from backend.services.ollama_service import get_ollama_service
 from backend.ai_models import CompartmentPrediction, PredictionLog
 
 router = APIRouter(prefix="/api/ai", tags=["AI Predictions"])
+
+
+# =====================================================
+# REQUEST MODELS
+# =====================================================
+
+class SimplePredictionRequest(BaseModel):
+    schedule_id: str
+    prediction_date: str  # Format: YYYY-MM-DD
 
 
 # =====================================================
@@ -60,6 +70,92 @@ def check_ollama_health(db: Session = Depends(get_db_session)):
         models=models,
         current_model=ollama.model
     )
+
+
+@router.post("/predict-simple", response_model=PredictionResponse)
+def generate_prediction_simple(
+    request: SimplePredictionRequest = Body(...),
+    db: Session = Depends(get_db_session)
+):
+    """
+    Generate AI-powered compartment prediction for a schedule (simplified endpoint)
+    
+    **Example:**
+    ```
+    POST /api/ai/predict-simple
+    {
+        "schedule_id": "SCH001",
+        "prediction_date": "2025-11-20"
+    }
+    ```
+    """
+    try:
+        # Parse date
+        prediction_date = datetime.strptime(request.prediction_date, "%Y-%m-%d").date()
+        
+        # Get schedule to extract route_id
+        schedule = db.query(TrainSchedule).filter(
+            TrainSchedule.train_schedule_id == request.schedule_id
+        ).first()
+        
+        if not schedule:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Schedule {request.schedule_id} not found"
+            )
+        
+        route_id = schedule.route_id
+        
+        # Use placeholder train_id since we don't track individual trains in schedules
+        # The RAG system will look up historical data by schedule_id anyway
+        train_id = "DEFAULT"
+        
+        # Check if Ollama is running
+        ollama = get_ollama_service()
+        if not ollama.check_health():
+            raise HTTPException(
+                status_code=503,
+                detail="Ollama service is not running. Please start Ollama first."
+            )
+        
+        # Generate prediction
+        engine = CompartmentPredictionEngine(db)
+        result = engine.predict(
+            schedule_id=request.schedule_id,
+            route_id=route_id,
+            train_id=train_id,
+            target_date=prediction_date,
+            save_to_db=True
+        )
+        
+        if not result["success"]:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Prediction failed: {result.get('message', 'Unknown error')}"
+            )
+        
+        pred = result["prediction"]
+        
+        return PredictionResponse(
+            success=True,
+            prediction_id=pred.get("prediction_id"),
+            schedule_id=request.schedule_id,
+            schedule_date=request.prediction_date,
+            predicted_first_class=pred["predicted_first_class"],
+            predicted_second_class=pred["predicted_second_class"],
+            predicted_third_class=pred["predicted_third_class"],
+            total_compartments=pred["predicted_first_class"] + pred["predicted_second_class"] + pred["predicted_third_class"],
+            confidence_score=pred.get("confidence_score"),
+            reasoning=pred.get("reasoning"),
+            execution_time_ms=result.get("execution_time_ms")
+        )
+    
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid date format: {e}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/predict", response_model=PredictionResponse)

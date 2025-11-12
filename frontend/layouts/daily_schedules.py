@@ -34,7 +34,7 @@ def daily_schedules_layout():
                             'margin': '0',
                             'fontSize': '28px'
                         }),
-                        html.P("View and manage running schedules by date", style={
+                        html.P("View running schedules and generate AI predictions", style={
                             'color': COLORS['text_secondary'],
                             'fontSize': '14px',
                             'margin': '4px 0 0 0'

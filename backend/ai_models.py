@@ -82,7 +82,7 @@ class CompartmentPrediction(Base):
     __table_args__ = (
         # Unique constraint: one active prediction per schedule+date
         # Index('idx_unique_active_prediction', 'schedule_id', 'schedule_date', 'is_active', unique=True),
-        {},
+        {'extend_existing': True},
     )
     
     def __repr__(self):
@@ -121,6 +121,8 @@ class PredictionLog(Base):
     model_name = Column(String(50))
     triggered_by = Column(String(100))  # User ID or 'system'
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    __table_args__ = {'extend_existing': True}
     
     def __repr__(self):
         status = "SUCCESS" if self.success else "FAILED"

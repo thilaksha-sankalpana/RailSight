@@ -13,7 +13,7 @@ import json
 logger = logging.getLogger(__name__)
 
 # Calendarific API Configuration
-CALENDARIFIC_API_KEY = "Q9Huk8AKRydwpdghOYmO0PK7ObnHULqa"
+CALENDARIFIC_API_KEY = "0MIR1HOzNIDSGlnih06PG6QffEMb4O4r"
 CALENDARIFIC_BASE_URL = "https://calendarific.com/api/v2"
 COUNTRY_CODE = "LK"  # Sri Lanka
 

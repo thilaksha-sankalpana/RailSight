@@ -15,7 +15,8 @@ from . import (
     profile_callbacks,
     schedule_by_station_callbacks,
     pricing_callbacks,
-    clientside_callbacks
+    clientside_callbacks,
+    daily_schedules_callbacks
 )
 
 
@@ -39,3 +40,4 @@ def register_callbacks(app):
     schedule_by_station_callbacks.register(app)
     pricing_callbacks.register(app)
     clientside_callbacks.register(app)
+    daily_schedules_callbacks.register(app)
