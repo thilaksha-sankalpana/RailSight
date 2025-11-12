@@ -1748,36 +1748,78 @@ async def update_daily_schedule_status(
 # ============= ANALYTICS =============
 @app.get("/analytics/summary", response_model=AnalyticsSummary)
 async def get_analytics_summary(db: Session = Depends(get_db)):
-    """Get dashboard analytics"""
+    """Get dashboard analytics - OPTIMIZED with single-query aggregations"""
     today = date.today()
-    day_name = today.strftime("%A").lower()
+    
+    # Get day type information (Poya day, holiday, day of week)
+    try:
+        day_info = get_day_type(today)
+        is_poya = day_info.get("is_poya_day", False)
+        is_holiday = day_info.get("is_public_holiday", False)
+        day_name = day_info.get("day_of_week", today.strftime("%A").lower())
+    except Exception as e:
+        logger.warning(f"Calendarific API error: {e}. Using fallback.")
+        day_name = today.strftime("%A").lower()
+        is_poya = False
+        is_holiday = False
+    
+    logger.info(f"Analytics for {today}: {day_name}, Poya: {is_poya}, Holiday: {is_holiday}")
 
-    # Tickets booked today
-    tickets_today = db.query(func.count(Ticket.ticket_id)).filter(
-        Ticket.issue_date == today
-    ).scalar() or 0
-
+    # OPTIMIZED: Single query for ticket metrics (count + revenue in one DB call)
+    # Only count valid tickets (exclude Cancelled, Refunded, NoShow)
+    # Revenue from tickets with Paid OR Pending status (expected revenue)
+    from sqlalchemy import case
+    
+    ticket_metrics = db.query(
+        func.count(Ticket.ticket_id).label('ticket_count'),
+        func.coalesce(
+            func.sum(
+                case(
+                    (Ticket.payment_status.in_([PaymentStatus.Paid, PaymentStatus.Pending]), Ticket.fee),
+                    else_=0
+                )
+            ), 
+            0
+        ).label('total_revenue')
+    ).filter(
+        and_(
+            Ticket.issue_date == today,
+            # Only count active tickets (exclude cancelled, refunded, no-show)
+            Ticket.status.in_([TicketStatus.Pending, TicketStatus.Completed])
+        )
+    ).first()
+    
+    tickets_today = ticket_metrics.ticket_count if ticket_metrics else 0
     passengers_today = tickets_today
+    revenue_today = Decimal(str(ticket_metrics.total_revenue)) if ticket_metrics else Decimal("0")
 
-    # Revenue today (from all tickets booked today)
-    revenue_today = db.query(func.sum(Ticket.fee)).filter(
-        Ticket.issue_date == today
-    ).scalar() or Decimal("0")
-
-    # Trains scheduled to run today
+    # Trains scheduled to run today - SERVER-SIDE counting with day/poya/holiday filters
+    trains_scheduled_today = 0
     if hasattr(TrainSchedule, day_name):
         day_column = getattr(TrainSchedule, day_name)
+        
+        # Build day filter conditions (evaluated on database server)
+        day_filters = [day_column == True]
+        if is_poya:
+            day_filters.append(TrainSchedule.poya_day == True)
+        if is_holiday:
+            day_filters.append(TrainSchedule.holiday == True)
+        
+        # Single COUNT query executed on database server
         trains_scheduled_today = db.query(func.count(TrainSchedule.train_schedule_id)).filter(
             and_(
-                day_column == True,
-                TrainSchedule.status == ScheduleStatus.Active
+                TrainSchedule.status == ScheduleStatus.Active,
+                or_(*day_filters)
             )
         ).scalar() or 0
     else:
+        logger.warning(f"Invalid day name: {day_name}")
         trains_scheduled_today = 0
 
-    # Trains active today (schedules that have capacity entries for today)
-    trains_active_today = db.query(func.count(func.distinct(ScheduleCapacity.schedule_id))).filter(
+    # OPTIMIZED: Single query for active trains count (distinct count on server)
+    trains_active_today = db.query(
+        func.count(func.distinct(ScheduleCapacity.schedule_id))
+    ).filter(
         ScheduleCapacity.schedule_date == today
     ).scalar() or 0
 
@@ -1785,8 +1827,10 @@ async def get_analytics_summary(db: Session = Depends(get_db)):
     if trains_active_today == 0:
         trains_active_today = trains_scheduled_today
 
-    avg_utilization = "75%"
+    # Route count (simple server-side count)
     active_routes = db.query(func.count(TrainRoute.route_id)).scalar() or 0
+    
+    avg_utilization = "75%"
 
     return AnalyticsSummary(
         total_tickets_today=tickets_today,
@@ -1865,81 +1909,151 @@ async def get_daily_ticket_sales(
     days: int = Query(30, le=90),
     db: Session = Depends(get_db)
 ):
-    """Get daily ticket sales for the last N days"""
-    dates = [(date.today() - timedelta(days=i)).isoformat() for i in range(days - 1, -1, -1)]
+    """Get daily ticket sales for the last N days - OPTIMIZED with single GROUP BY query"""
+    today = date.today()
+    start_date = today - timedelta(days=days - 1)
+    
+    # SINGLE SERVER-SIDE QUERY: Group by date and count tickets
+    results = db.query(
+        Ticket.issue_date,
+        func.count(Ticket.ticket_id).label('ticket_count')
+    ).filter(
+        and_(
+            Ticket.issue_date >= start_date,
+            Ticket.issue_date <= today
+        )
+    ).group_by(
+        Ticket.issue_date
+    ).order_by(
+        Ticket.issue_date
+    ).all()
+    
+    # Create a dictionary for fast lookup
+    ticket_counts = {row.issue_date: row.ticket_count for row in results}
+    
+    # Generate complete date range and fill in counts (0 for days with no tickets)
+    dates = []
     tickets = []
-
-    for d in dates:
-        count = db.query(func.count(Ticket.ticket_id)).filter(
-            Ticket.issue_date == d
-        ).scalar() or 0
-        tickets.append(count)
+    
+    for i in range(days - 1, -1, -1):
+        current_date = today - timedelta(days=i)
+        dates.append(current_date.isoformat())
+        tickets.append(ticket_counts.get(current_date, 0))
 
     return DailyTicketSales(dates=dates, tickets=tickets)
 
 @app.get("/analytics/schedule-status-today", response_model=ScheduleStatusToday)
 async def get_schedule_status_today(db: Session = Depends(get_db)):
-    """Get completed vs pending train schedules for today"""
+    """Get completed vs pending train schedules for today - SERVER-SIDE time comparison"""
     today = date.today()
-    day_name = today.strftime("%A").lower()
+    
+    # Get current time in Sri Lanka timezone (UTC+5:30)
+    sri_lanka_tz = timezone(timedelta(hours=5, minutes=30))
+    current_datetime_sl = datetime.now(sri_lanka_tz)
+    current_time_sl = current_datetime_sl.time()
+    
+    # Get day type information (Poya day, holiday, day of week)
+    try:
+        day_info = get_day_type(today)
+        is_poya = day_info.get("is_poya_day", False)
+        is_holiday = day_info.get("is_public_holiday", False)
+        day_name = day_info.get("day_of_week", today.strftime("%A").lower())
+    except Exception as e:
+        logger.warning(f"Calendarific API error: {e}. Using fallback.")
+        day_name = today.strftime("%A").lower()
+        is_poya = False
+        is_holiday = False
 
     # Get all schedules that should run today
     if not hasattr(TrainSchedule, day_name):
         return ScheduleStatusToday(completed=0, pending=0)
 
     day_column = getattr(TrainSchedule, day_name)
+    
+    # Build day filter conditions
+    day_filters = [day_column == True]
+    if is_poya:
+        day_filters.append(TrainSchedule.poya_day == True)
+    if is_holiday:
+        day_filters.append(TrainSchedule.holiday == True)
 
-    total_scheduled = db.query(func.count(TrainSchedule.train_schedule_id)).filter(
+    # SERVER-SIDE query: Count completed trains (destination_departure < current_time)
+    # Use CASE to count based on time comparison directly in SQL
+    from sqlalchemy import case as sql_case
+    
+    completed = db.query(
+        func.count(
+            sql_case(
+                (TrainSchedule.destination_departure < current_time_sl, 1),
+                else_=None
+            )
+        )
+    ).filter(
         and_(
-            day_column == True,
-            TrainSchedule.status == ScheduleStatus.Active
+            TrainSchedule.status == ScheduleStatus.Active,
+            or_(*day_filters)
         )
     ).scalar() or 0
 
-    # Count completed schedules (those with schedule capacity entries for today with assigned trains)
-    completed = db.query(func.count(ScheduleCapacity.id)).filter(
+    # SERVER-SIDE query: Count pending trains (destination_departure >= current_time)
+    pending = db.query(
+        func.count(
+            sql_case(
+                (TrainSchedule.destination_departure >= current_time_sl, 1),
+                else_=None
+            )
+        )
+    ).filter(
         and_(
-            ScheduleCapacity.schedule_date == today,
-            ScheduleCapacity.train_id.isnot(None)
+            TrainSchedule.status == ScheduleStatus.Active,
+            or_(*day_filters)
         )
     ).scalar() or 0
 
-    # Pending = total scheduled - completed
-    pending = max(0, total_scheduled - completed)
+    logger.info(f"Schedule status for {today} at {current_time_sl}: Completed={completed}, Pending={pending}")
 
     return ScheduleStatusToday(completed=completed, pending=pending)
 
 @app.get("/analytics/class-distribution-today", response_model=ClassDistributionToday)
 async def get_class_distribution_today(db: Session = Depends(get_db)):
-    """Get ticket class distribution for today"""
+    """Get ticket class distribution for today - OPTIMIZED single query"""
     today = date.today()
 
-    # Updated to use new enum values
-    first_class = db.query(func.count(Ticket.ticket_id)).filter(
+    # OPTIMIZED: Single query with CASE to count all classes at once
+    # Only count active tickets (exclude Cancelled, Refunded, NoShow)
+    from sqlalchemy import case as sql_case
+    
+    results = db.query(
+        func.count(
+            sql_case(
+                (Ticket.class_ == TrainClass.First, 1),
+                else_=None
+            )
+        ).label('first_class'),
+        func.count(
+            sql_case(
+                (Ticket.class_ == TrainClass.Second, 1),
+                else_=None
+            )
+        ).label('second_class'),
+        func.count(
+            sql_case(
+                (Ticket.class_ == TrainClass.Third, 1),
+                else_=None
+            )
+        ).label('third_class')
+    ).filter(
         and_(
             Ticket.issue_date == today,
-            Ticket.class_ == TrainClass.First
+            # Only count active tickets (exclude cancelled, refunded, no-show)
+            Ticket.status.in_([TicketStatus.Pending, TicketStatus.Completed])
         )
-    ).scalar() or 0
-
-    second_class = db.query(func.count(Ticket.ticket_id)).filter(
-        and_(
-            Ticket.issue_date == today,
-            Ticket.class_ == TrainClass.Second
-        )
-    ).scalar() or 0
-
-    third_class = db.query(func.count(Ticket.ticket_id)).filter(
-        and_(
-            Ticket.issue_date == today,
-            Ticket.class_ == TrainClass.Third
-        )
-    ).scalar() or 0
+    ).first()
 
     return ClassDistributionToday(
-        first_class=first_class,
-        second_class=second_class,
-        third_class=third_class
+        first_class=results.first_class if results else 0,
+        second_class=results.second_class if results else 0,
+        third_class=results.third_class if results else 0
     )
 
 # ============= TRAIN ALLOCATION =============

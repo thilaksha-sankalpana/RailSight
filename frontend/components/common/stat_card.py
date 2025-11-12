@@ -22,35 +22,41 @@ def create_stat_card(icon, value, label, color):
     return html.Div([
         html.Div([
             html.Div([
-                html.I(className=icon, style={'fontSize': '32px', 'color': color}),
+                html.I(className=icon, style={'fontSize': '34px', 'color': color}),
             ], style={
-                'flex': '0 0 64px',
-                'height': '64px',
+                'flex': '0 0 68px',
+                'height': '68px',
                 'display': 'flex',
                 'alignItems': 'center',
                 'justifyContent': 'center',
                 'background': f'{color}15',
-                'borderRadius': '12px'
+                'borderRadius': '14px',
+                'boxShadow': f'0 2px 8px {color}20'
             }),
             html.Div([
                 html.H3(value, style={
                     'margin': '0',
-                    'fontSize': '28px',
+                    'fontSize': '30px',
                     'fontWeight': '700',
-                    'color': COLORS['text_primary']
+                    'color': COLORS['text_primary'],
+                    'letterSpacing': '-0.5px'
                 }),
                 html.P(label, style={
                     'margin': '0',
                     'color': COLORS['text_secondary'],
                     'fontSize': '14px',
-                    'marginTop': '4px'
+                    'marginTop': '6px',
+                    'fontWeight': '500',
+                    'lineHeight': '1.3'
                 })
-            ], style={'marginLeft': '16px'})
+            ], style={'marginLeft': '18px', 'flex': '1'})
         ], style={'display': 'flex', 'alignItems': 'center'})
     ], className="stat-card", style={
         'background': COLORS['surface'],
-        'padding': '24px',
-        'borderRadius': '12px',
-        'boxShadow': '0 2px 8px rgba(0,0,0,0.08)',
-        'border': f'1px solid {COLORS["border"]}'
+        'padding': '26px',
+        'borderRadius': '14px',
+        'boxShadow': '0 3px 12px rgba(0,0,0,0.09)',
+        'border': f'1px solid {COLORS["border"]}',
+        'transition': 'all 0.3s ease',
+        'height': '100%'
     })

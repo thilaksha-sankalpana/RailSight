@@ -32,7 +32,11 @@ SIDEBAR_STYLE = {
     'boxShadow': '4px 0 12px rgba(0,0,0,0.15)',
     'zIndex': 1000,
     'overflowY': 'auto',
-    'fontFamily': 'Roboto, sans-serif'
+    'fontFamily': 'Roboto, sans-serif',
+    'borderTopRightRadius': '16px',
+    'borderBottomRightRadius': '16px',
+    'scrollbarWidth': 'none',  # Firefox
+    'msOverflowStyle': 'none'  # IE and Edge
 }
 
 CONTENT_STYLE = {
@@ -53,7 +57,9 @@ TOPBAR_STYLE = {
     'justifyContent': 'space-between',
     'position': 'sticky',
     'top': 0,
-    'zIndex': 999
+    'zIndex': 999,
+    'borderBottomLeftRadius': '16px',
+    'borderBottomRightRadius': '16px'
 }
 
 NAV_LINK_STYLE = {

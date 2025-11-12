@@ -37,10 +37,10 @@ def register(app):
             Tuple of 4 stat card components
         """
         default = [
-            create_stat_card("fas fa-train", "0", "Trains Active Today", COLORS['primary']),
-            create_stat_card("fas fa-calendar-check", "0", "Trains Scheduled Today", COLORS['info']),
-            create_stat_card("fas fa-ticket-alt", "0", "Tickets Booked Today", COLORS['success']),
-            create_stat_card("fas fa-dollar-sign", "LKR 0", "Revenue Today", COLORS['warning'])
+            create_stat_card("fas fa-train", "0", "Active Train Operations", COLORS['primary']),
+            create_stat_card("fas fa-calendar-check", "0", "Scheduled Services Today", COLORS['info']),
+            create_stat_card("fas fa-ticket-alt", "0", "Total Bookings Today", COLORS['success']),
+            create_stat_card("fas fa-dollar-sign", "LKR 0", "Daily Revenue Generated", COLORS['warning'])
         ]
         if not token or pathname != "/":
             return default
@@ -48,13 +48,13 @@ def register(app):
         if data:
             return [
                 create_stat_card("fas fa-train", str(data.get("trains_active_today", 0)),
-                               "Trains Active Today", COLORS['primary']),
+                               "Active Train Operations", COLORS['primary']),
                 create_stat_card("fas fa-calendar-check", str(data.get("trains_scheduled_today", 0)),
-                               "Trains Scheduled Today", COLORS['info']),
+                               "Scheduled Services Today", COLORS['info']),
                 create_stat_card("fas fa-ticket-alt", str(data.get("total_tickets_today", 0)),
-                               "Tickets Booked Today", COLORS['success']),
+                               "Total Bookings Today", COLORS['success']),
                 create_stat_card("fas fa-dollar-sign", f"LKR {float(data.get('revenue_today', 0)):,.2f}",
-                               "Revenue Today", COLORS['warning'])
+                               "Daily Revenue Generated", COLORS['warning'])
             ]
         return default
 
@@ -85,27 +85,31 @@ def register(app):
                 x=data.get("dates", []),
                 y=data.get("tickets", []),
                 mode='lines+markers',
-                line=dict(color=COLORS['primary'], width=3),
-                marker=dict(size=8, color=COLORS['primary']),
+                line=dict(color=COLORS['primary'], width=3, shape='spline'),
+                marker=dict(size=8, color=COLORS['primary'], line=dict(width=2, color='white')),
                 fill='tozeroy',
                 fillcolor=f'rgba(196, 30, 58, 0.1)',
-                name='Tickets Sold'
+                name='Tickets Sold',
+                hovertemplate='<b>Date:</b> %{x}<br><b>Bookings:</b> %{y}<extra></extra>'
             ))
             fig.update_layout(
                 template="plotly_white",
                 height=280,
-                margin=dict(l=40, r=20, t=10, b=40),
+                margin=dict(l=50, r=20, t=10, b=50),
                 xaxis=dict(
-                    title="Date",
-                    showgrid=False
+                    title="<b>Date Period</b>",
+                    showgrid=False,
+                    title_font=dict(size=13, color=COLORS['text_secondary'])
                 ),
                 yaxis=dict(
-                    title="Number of Tickets",
+                    title="<b>Total Bookings</b>",
                     showgrid=True,
-                    gridcolor='#f1f5f9'
+                    gridcolor='#f1f5f9',
+                    title_font=dict(size=13, color=COLORS['text_secondary'])
                 ),
                 hovermode='x unified',
-                showlegend=False
+                showlegend=False,
+                font=dict(family="Inter, system-ui, sans-serif")
             )
         return fig
 
@@ -132,17 +136,21 @@ def register(app):
             return fig
         data = make_api_request("/analytics/schedule-status-today", token=token, timeout=10)
         if data:
-            labels = ['Completed', 'Pending']
+            labels = ['Completed Services', 'Pending Services']
             values = [data.get('completed', 0), data.get('pending', 0)]
             colors_pie = [COLORS['success'], COLORS['warning']]
             fig = go.Figure(data=[go.Pie(
                 labels=labels,
                 values=values,
-                marker=dict(colors=colors_pie),
-                hole=0.4,
-                textinfo='label+percent+value',
+                marker=dict(
+                    colors=colors_pie,
+                    line=dict(color='white', width=3)
+                ),
+                hole=0.45,
+                textinfo='label+percent',
                 textposition='auto',
-                hovertemplate='<b>%{label}</b><br>Schedules: %{value}<br>Percentage: %{percent}<extra></extra>'
+                textfont=dict(size=12, color='white', family='Inter, system-ui, sans-serif'),
+                hovertemplate='<b>%{label}</b><br>Count: %{value} services<br>Share: %{percent}<extra></extra>'
             )])
             fig.update_layout(
                 template="plotly_white",
@@ -152,10 +160,12 @@ def register(app):
                 legend=dict(
                     orientation="h",
                     yanchor="bottom",
-                    y=-0.2,
+                    y=-0.15,
                     xanchor="center",
-                    x=0.5
-                )
+                    x=0.5,
+                    font=dict(size=11, family='Inter, system-ui, sans-serif')
+                ),
+                font=dict(family="Inter, system-ui, sans-serif")
             )
         return fig
 
@@ -182,7 +192,7 @@ def register(app):
             return fig
         data = make_api_request("/analytics/class-distribution-today", token=token, timeout=10)
         if data:
-            labels = ['1st Class', '2nd Class', '3rd Class']
+            labels = ['First Class Premium', 'Second Class Standard', 'Third Class Economy']
             values = [
                 data.get('first_class', 0),
                 data.get('second_class', 0),
@@ -192,11 +202,15 @@ def register(app):
             fig = go.Figure(data=[go.Pie(
                 labels=labels,
                 values=values,
-                marker=dict(colors=colors_pie),
-                hole=0.4,
-                textinfo='label+percent+value',
+                marker=dict(
+                    colors=colors_pie,
+                    line=dict(color='white', width=3)
+                ),
+                hole=0.45,
+                textinfo='label+percent',
                 textposition='auto',
-                hovertemplate='<b>%{label}</b><br>Tickets: %{value}<br>Percentage: %{percent}<extra></extra>'
+                textfont=dict(size=12, color='white', family='Inter, system-ui, sans-serif'),
+                hovertemplate='<b>%{label}</b><br>Bookings: %{value} tickets<br>Share: %{percent}<extra></extra>'
             )])
             fig.update_layout(
                 template="plotly_white",
@@ -206,9 +220,11 @@ def register(app):
                 legend=dict(
                     orientation="h",
                     yanchor="bottom",
-                    y=-0.2,
+                    y=-0.15,
                     xanchor="center",
-                    x=0.5
-                )
+                    x=0.5,
+                    font=dict(size=11, family='Inter, system-ui, sans-serif')
+                ),
+                font=dict(family="Inter, system-ui, sans-serif")
             )
         return fig

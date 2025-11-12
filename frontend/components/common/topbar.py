@@ -15,44 +15,9 @@ def create_topbar():
         Dash HTML component for the top navigation bar
     """
     return html.Div([
-        # Search Bar
-        html.Div([
-            html.I(className="fas fa-search", style={
-                'position': 'absolute',
-                'left': '16px',
-                'top': '50%',
-                'transform': 'translateY(-50%)',
-                'color': COLORS['text_secondary'],
-                'fontSize': '16px'
-            }),
-            dbc.Input(
-                id="global-search",
-                type="text",
-                placeholder="Search schedules, trains, routes...",
-                style={
-                    'width': '400px',
-                    'paddingLeft': '45px',
-                    'border': f'2px solid {COLORS["border"]}',
-                    'borderRadius': '8px',
-                    'transition': 'all 0.3s ease'
-                }
-            ),
-            html.Div(id="search-results", style={
-                'position': 'absolute',
-                'top': '100%',
-                'left': 0,
-                'right': 0,
-                'background': 'white',
-                'boxShadow': '0 4px 12px rgba(0,0,0,0.1)',
-                'borderRadius': '8px',
-                'marginTop': '8px',
-                'maxHeight': '400px',
-                'overflowY': 'auto',
-                'display': 'none',
-                'zIndex': 1000
-            })
-        ], style={'position': 'relative'}),
-
+        # Empty left side (for spacing)
+        html.Div(),
+        
         # Right Side Icons
         html.Div([
             # Notifications with improved UI

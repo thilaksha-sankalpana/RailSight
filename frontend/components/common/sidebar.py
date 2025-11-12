@@ -64,7 +64,6 @@ def create_sidebar(username="User", email="user@railway.lk", full_name="Administ
             ], style={'textAlign': 'center'})
         ], style={
             'padding': '36px 20px 32px 20px',
-            'borderBottom': '2px solid rgba(255,255,255,0.15)',
             'background': 'linear-gradient(180deg, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0) 100%)'
         }),
 
@@ -140,4 +139,4 @@ def create_sidebar(username="User", email="user@railway.lk", full_name="Administ
             'left': '16px',
             'right': '16px'
         })
-    ], style=SIDEBAR_STYLE)
+    ], id='sidebar', style=SIDEBAR_STYLE)

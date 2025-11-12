@@ -1,4 +1,10 @@
 /* TCDAFS - Custom CSS Styles */
+
+/* Hide sidebar scrollbar */
+#sidebar::-webkit-scrollbar {
+    display: none;
+}
+
 /* Enhanced button hover and click animations */
 button, .btn, a[role="button"] {
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
@@ -160,6 +166,30 @@ input:focus, select:focus, textarea:focus, .Select-control:focus {
 #global-search:focus {
     width: 500px !important;
     transition: width 0.3s ease;
+}
+
+/* Search result item hover */
+.search-result-item:hover {
+    background: rgba(196, 30, 58, 0.05) !important;
+    transform: translateX(4px);
+}
+
+/* Search results scrollbar */
+#search-results::-webkit-scrollbar {
+    width: 6px;
+}
+
+#search-results::-webkit-scrollbar-track {
+    background: #f8f9fa;
+}
+
+#search-results::-webkit-scrollbar-thumb {
+    background: #C41E3A;
+    border-radius: 3px;
+}
+
+#search-results::-webkit-scrollbar-thumb:hover {
+    background: #9B1829;
 }
 
 /* Modal animations */
