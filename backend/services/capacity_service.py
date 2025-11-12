@@ -309,6 +309,9 @@ class CapacityService:
     ) -> List[SegmentCapacity]:
         """
         Find all segments that overlap with a booking from origin to destination
+        
+        The segments are ordered by origin_departure time to ensure we get the correct
+        sequential segments from origin to destination station.
 
         Example: Booking from B to E on route A-B-C-D-E-F
         Returns segments: [B-C, C-D, D-E]
@@ -322,56 +325,74 @@ class CapacityService:
         Returns:
             List of SegmentCapacity objects that overlap with the booking
         """
-        # Get all segments for this schedule capacity, ordered by segment_order
+        # Get the schedule_id from the schedule_capacity to query the original schedule segments
+        schedule_capacity = db.query(ScheduleCapacity).filter(
+            ScheduleCapacity.id == schedule_capacity_id
+        ).first()
+        
+        if not schedule_capacity:
+            logger.error(f"Schedule capacity {schedule_capacity_id} not found")
+            return []
+        
+        # Get the schedule segments ordered by departure time from TrainScheduleByStation
+        schedule_segments = db.query(TrainScheduleByStation).filter(
+            TrainScheduleByStation.train_schedule_id == schedule_capacity.schedule_id
+        ).order_by(TrainScheduleByStation.origin_departure).all()
+        
+        if not schedule_segments:
+            logger.warning(f"No schedule segments found for schedule {schedule_capacity.schedule_id}")
+            return []
+        
+        # Get all capacity segments for this schedule capacity
         all_segments = db.query(SegmentCapacity).filter(
             SegmentCapacity.schedule_capacity_id == schedule_capacity_id
-        ).order_by(SegmentCapacity.segment_order).all()
+        ).all()
+        
+        # Create a lookup map for capacity segments by (origin_id, destination_id)
+        segment_map = {
+            (seg.origin_station_id, seg.destination_station_id): seg 
+            for seg in all_segments
+        }
+        
+        # Create a lookup map for capacity segments by (origin_id, destination_id)
+        segment_map = {
+            (seg.origin_station_id, seg.destination_station_id): seg 
+            for seg in all_segments
+        }
 
-        if not all_segments:
-            logger.warning(f"No segments found for schedule_capacity_id {schedule_capacity_id}")
-            return []
-
+        # Now walk through schedule segments in departure order and collect overlapping ones
         overlapping = []
         collecting = False
-
-        # Debug: Check if destination exists in any segment
-        destination_found_in_segments = any(
-            seg.destination_station_id == destination_station_id or 
-            seg.origin_station_id == destination_station_id 
-            for seg in all_segments
-        )
         
-        if not destination_found_in_segments:
-            logger.error(
-                f"Destination {destination_station_id} not found in any segment! "
-                f"First segment: {all_segments[0].origin_station_id}→{all_segments[0].destination_station_id}, "
-                f"Last segment: {all_segments[-1].origin_station_id}→{all_segments[-1].destination_station_id}"
-            )
-            return []
-
-        for segment in all_segments:
-            # Start collecting when we find the origin station
+        for schedule_seg in schedule_segments:
+            # Start collecting when we find the origin station as the segment origin
             if not collecting:
-                if segment.origin_station_id == origin_station_id:
-                    # Origin is at the start of this segment - include it
+                if schedule_seg.origin_station_id == origin_station_id:
                     collecting = True
-                elif segment.destination_station_id == origin_station_id:
-                    # Origin is at the end of this segment (intermediate stop)
-                    # Start collecting from NEXT segment
-                    collecting = True
-                    continue
-
-            # Collect segments once we've started
+            
+            # If we're collecting, add the corresponding capacity segment
             if collecting:
-                overlapping.append(segment)
+                # Look up the capacity segment for this route segment
+                capacity_seg = segment_map.get(
+                    (schedule_seg.origin_station_id, schedule_seg.destination_station_id)
+                )
                 
-                # Stop when we reach the destination
-                if segment.destination_station_id == destination_station_id:
+                if capacity_seg:
+                    overlapping.append(capacity_seg)
+                else:
+                    logger.warning(
+                        f"Capacity segment not found for {schedule_seg.origin_station_id} → "
+                        f"{schedule_seg.destination_station_id}"
+                    )
+                
+                # Stop when we reach the destination as the segment destination
+                if schedule_seg.destination_station_id == destination_station_id:
                     break
 
         if not overlapping:
             logger.warning(
-                f"No segments found for {origin_station_id} → {destination_station_id}"
+                f"No segments found for {origin_station_id} → {destination_station_id}. "
+                f"Available segments: {[(seg.origin_station_id, seg.destination_station_id) for seg in schedule_segments]}"
             )
         elif overlapping and overlapping[-1].destination_station_id != destination_station_id:
             logger.error(
