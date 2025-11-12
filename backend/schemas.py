@@ -134,8 +134,16 @@ class TrainModelCreate(BaseModel):
 
 class TrainModelUpdate(BaseModel):
     """Schema for updating train model"""
-    model_name: Optional[str] = None
+    model_name: Optional[str] = Field(None, min_length=2, max_length=255)
+    model_type: Optional[str] = Field(None, min_length=2, max_length=100)
+    manufacturer: Optional[str] = Field(None, min_length=2, max_length=255)
+    country_of_origin: Optional[str] = Field(None, min_length=2, max_length=100)
     operational_units: Optional[int] = Field(None, ge=0)
+    compartments_per_unit: Optional[int] = Field(None, gt=0)
+    total_compartments_assigned_per_model: Optional[int] = Field(None, ge=0)
+    seating_passengers_per_compartment: Optional[int] = Field(None, ge=0)
+    standing_passengers_per_compartment: Optional[int] = Field(None, ge=0)
+    total_passengers_per_compartment: Optional[int] = Field(None, ge=0)
     # Route assignments (R01-R09)
     r01: Optional[bool] = None
     r02: Optional[bool] = None
@@ -156,6 +164,7 @@ class TrainModelResponse(BaseModel):
     country_of_origin: str
     operational_units: int
     compartments_per_unit: int
+    total_compartments_assigned_per_model: int
     seating_passengers_per_compartment: int
     standing_passengers_per_compartment: int
     total_passengers_per_compartment: int
@@ -198,6 +207,7 @@ class OperationalTrainResponse(BaseModel):
 
     class Config:
         from_attributes = True
+        use_enum_values = True  # Convert enums to their string values
 
 # =====================================================
 # SCHEDULE SCHEMAS
@@ -273,7 +283,9 @@ class ScheduleResponse(BaseModel):
     train_schedule_id: str
     route_id: str
     train_schedule: str
+    origin_station_id: str
     origin_station: str
+    destination_station_id: str
     destination_station: str
     origin_departure: time
     destination_departure: time

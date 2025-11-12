@@ -1,0 +1,635 @@
+/* TCDAFS - Custom CSS Styles */
+/* Enhanced button hover and click animations */
+button, .btn, a[role="button"] {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+button:hover, .btn:hover, a[role="button"]:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 6px 20px rgba(196, 30, 58, 0.4) !important;
+}
+button:active, .btn:active, a[role="button"]:active {
+    transform: translateY(0px) !important;
+    box-shadow: 0 2px 8px rgba(196, 30, 58, 0.3) !important;
+}
+
+/* Login button specific animations */
+#login-button {
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+#login-button:hover {
+    transform: translateY(-3px) !important;
+    box-shadow: 0 8px 25px rgba(196, 30, 58, 0.5) !important;
+    background: linear-gradient(135deg, #E84855 0%, #C41E3A 100%) !important;
+}
+#login-button:active {
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 15px rgba(196, 30, 58, 0.4) !important;
+}
+
+/* Ripple effect */
+#login-button::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.3);
+    transform: translate(-50%, -50%);
+    transition: width 0.6s, height 0.6s;
+}
+#login-button:active::after {
+    width: 300px;
+    height: 300px;
+}
+
+/* Navigation link hover effects */
+.nav-link-item {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    position: relative;
+}
+.nav-link-item:hover {
+    background: rgba(255, 255, 255, 0.15) !important;
+    border-left: 4px solid #FFD700 !important;
+    transform: translateX(6px);
+    color: white !important;
+}
+.nav-link-item:active {
+    background: rgba(255, 255, 255, 0.25) !important;
+    transform: translateX(8px);
+}
+
+/* Active nav link - STAYS HIGHLIGHTED */
+.nav-link-active {
+    background: rgba(255, 255, 255, 0.2) !important;
+    border-left: 4px solid #FFD700 !important;
+    color: white !important;
+    font-weight: 600 !important;
+    transform: translateX(4px);
+}
+.nav-link-active:hover {
+    background: rgba(255, 255, 255, 0.25) !important;
+    transform: translateX(6px);
+}
+
+/* Input focus animations */
+input:focus, select:focus, textarea:focus, .Select-control:focus {
+    transform: scale(1.01);
+    box-shadow: 0 0 0 3px rgba(196, 30, 58, 0.1) !important;
+    border-color: #C41E3A !important;
+    transition: all 0.3s ease;
+}
+
+/* Card hover effects */
+.stat-card {
+    transition: all 0.3s ease;
+}
+.stat-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15) !important;
+}
+
+/* Dropdown smooth animation - no jump */
+.dropdown-menu {
+    animation: smoothSlideDown 0.2s ease-out !important;
+    transform-origin: top;
+}
+
+@keyframes smoothSlideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-5px) scaleY(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scaleY(1);
+    }
+}
+
+@keyframes float {
+    0%, 100% {
+        transform: translateY(0px);
+    }
+    50% {
+        transform: translateY(-20px);
+    }
+}
+
+/* Pulse animation */
+@keyframes pulse {
+    0%, 100% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.1);
+    }
+}
+.notification-badge {
+    animation: pulse 2s ease infinite;
+}
+
+/* Fade in */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+.fade-in {
+    animation: fadeIn 0.5s ease;
+}
+
+/* Spinner */
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+.spinner {
+    animation: spin 1s linear infinite;
+}
+
+/* Search bar focus */
+#global-search:focus {
+    width: 500px !important;
+    transition: width 0.3s ease;
+}
+
+/* Modal animations */
+.modal-content {
+    animation: slideDown 0.3s ease;
+}
+
+/* User profile hover */
+.user-profile-box:hover {
+    background: rgba(255, 255, 255, 0.2) !important;
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+
+/* Ticket card */
+.ticket-card {
+    transition: all 0.3s ease;
+}
+.ticket-card:hover {
+    transform: translateX(4px);
+    box-shadow: -4px 0 12px rgba(196, 30, 58, 0.2);
+}
+
+/* Schedule card hover */
+.schedule-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12) !important;
+}
+
+/* Schedule option hover */
+.schedule-option:hover {
+    background: #f0f4f8 !important;
+    border-color: #C41E3A !important;
+}
+
+/* Button hover effects */
+button:hover {
+    opacity: 0.9;
+    transform: scale(1.02);
+}
+
+/* Top bar icons */
+.top-bar-icon {
+    transition: all 0.3s ease;
+}
+.top-bar-icon:hover {
+    transform: scale(1.2);
+    color: #C41E3A !important;
+}
+
+/* Gradient background */
+@keyframes gradientShift {
+    0% {
+        background-position: 0% 50%;
+    }
+    50% {
+        background-position: 100% 50%;
+    }
+    100% {
+        background-position: 0% 50%;
+    }
+}
+.animated-gradient {
+    background: linear-gradient(135deg, #C41E3A15 0%, #FFD70015 25%, #2196F315 50%, #4CAF5015 75%, #C41E3A15 100%);
+    background-size: 400% 400%;
+    animation: gradientShift 15s ease infinite;
+}
+
+/* Logout button */
+#sidebar-logout-btn:hover {
+    background: rgba(255, 255, 255, 0.25) !important;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+#sidebar-logout-btn:active {
+    transform: translateY(0px);
+}
+
+/* Dropdown menu items hover */
+.dropdown-menu-item:hover {
+    background: #f5f7fa !important;
+    transform: translateX(4px);
+}
+
+/* Notification and profile buttons hover */
+#notification-btn:hover, #profile-dropdown-btn:hover {
+    background: #e8ecf1 !important;
+    transform: scale(1.05);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+/* Book ticket button */
+#book-ticket-btn:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 8px 25px rgba(196, 30, 58, 0.5) !important;
+}
+#book-ticket-btn:active {
+    transform: translateY(0px) !important;
+}
+
+/* Ticket count buttons */
+#increase-tickets:hover, #decrease-tickets:hover {
+    transform: scale(1.1);
+    box-shadow: 0 2px 8px rgba(196, 30, 58, 0.3);
+}
+#increase-tickets:active, #decrease-tickets:active {
+    transform: scale(0.95);
+}
+
+/* Notification button - remove square background */
+#notification-btn {
+    background: transparent !important;
+    border: none !important;
+    padding: 8px !important;
+    border-radius: 50% !important;
+    transition: all 0.2s ease !important;
+}
+#notification-btn:hover {
+    background: rgba(196, 30, 58, 0.1) !important;
+    transform: scale(1.1);
+}
+#notification-btn:active {
+    transform: scale(0.95);
+}
+
+/* ============================================ */
+/* PROFESSIONAL TRAIN SCHEDULES STYLING */
+/* ============================================ */
+
+/* Custom styling for checkboxes in modals */
+.custom-checklist .form-check {
+    background-color: white;
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: 1.5px solid #e2e8f0;
+    margin-right: 12px;
+    margin-bottom: 10px;
+    transition: all 0.2s ease;
+    display: inline-block;
+}
+
+.custom-checklist .form-check:hover {
+    border-color: #C41E3A;
+    background-color: #fef2f2;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(196, 30, 58, 0.15);
+}
+
+.custom-checklist .form-check-input:checked ~ .form-check-label {
+    color: #9B1829;
+    font-weight: 600;
+}
+
+.custom-checklist .form-check-input:checked {
+    background-color: #C41E3A;
+    border-color: #C41E3A;
+}
+
+/* Professional table styling */
+.table-responsive table {
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.table-responsive thead th {
+    background: linear-gradient(135deg, #9B1829 0%, #C41E3A 100%);
+    color: white;
+    font-weight: 700;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 16px 12px;
+    border: none;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.table-responsive thead th:first-child {
+    border-top-left-radius: 10px;
+}
+
+.table-responsive thead th:last-child {
+    border-top-right-radius: 10px;
+}
+
+.table-responsive tbody tr {
+    transition: all 0.2s ease;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.table-responsive tbody tr:hover {
+    background-color: #fef2f2;
+    transform: scale(1.001);
+    box-shadow: 0 2px 8px rgba(196, 30, 58, 0.08);
+}
+
+.table-responsive tbody td {
+    padding: 14px 12px;
+    font-size: 13px;
+    color: #374151;
+    vertical-align: middle;
+}
+
+/* Status badge improvements */
+.badge {
+    font-weight: 600;
+    font-size: 11px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.bg-success {
+    background: linear-gradient(135deg, #059669 0%, #10b981 100%) !important;
+}
+
+.bg-danger {
+    background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%) !important;
+}
+
+.bg-warning {
+    background: linear-gradient(135deg, #d97706 0%, #f59e0b 100%) !important;
+}
+
+.bg-info {
+    background: linear-gradient(135deg, #C41E3A 0%, #E84855 100%) !important;
+}
+
+/* Filter card styling */
+.card {
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+    transition: all 0.3s ease;
+}
+
+.card:hover {
+    box-shadow: 0 8px 16px rgba(196, 30, 58, 0.12);
+}
+
+.card-header {
+    background: linear-gradient(135deg, #f8fafc 0%, #fee2e2 100%);
+    border-bottom: 2px solid #fecaca;
+    font-weight: 700;
+    font-size: 16px;
+    color: #1e293b;
+    padding: 16px 20px;
+}
+
+/* Button improvements */
+.btn {
+    border-radius: 8px;
+    font-weight: 600;
+    padding: 10px 20px;
+    transition: all 0.2s ease;
+    border: none;
+    font-size: 14px;
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #C41E3A 0%, #9B1829 100%);
+    box-shadow: 0 4px 6px rgba(196, 30, 58, 0.25);
+}
+
+.btn-primary:hover {
+    background: linear-gradient(135deg, #9B1829 0%, #7d1422 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 12px rgba(196, 30, 58, 0.35);
+}
+
+.btn-success {
+    background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+    box-shadow: 0 4px 6px rgba(5, 150, 105, 0.2);
+}
+
+.btn-success:hover {
+    background: linear-gradient(135deg, #047857 0%, #059669 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 12px rgba(5, 150, 105, 0.3);
+}
+
+.btn-danger {
+    background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%);
+    box-shadow: 0 4px 6px rgba(220, 38, 38, 0.2);
+}
+
+.btn-danger:hover {
+    background: linear-gradient(135deg, #b91c1c 0%, #dc2626 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 12px rgba(220, 38, 38, 0.3);
+}
+
+.btn-outline-secondary {
+    border: 2px solid #cbd5e1;
+    color: #475569;
+    background: white;
+}
+
+.btn-outline-secondary:hover {
+    background: #f1f5f9;
+    border-color: #94a3b8;
+    color: #334155;
+}
+
+/* Dropdown improvements */
+.Select-control {
+    border-radius: 8px !important;
+    border: 1.5px solid #cbd5e1 !important;
+    transition: all 0.2s ease !important;
+}
+
+.Select-control:hover {
+    border-color: #C41E3A !important;
+}
+
+.Select--is-focused .Select-control {
+    border-color: #C41E3A !important;
+    box-shadow: 0 0 0 3px rgba(196, 30, 58, 0.1) !important;
+}
+
+/* Input improvements */
+.form-control, .form-select {
+    border-radius: 8px;
+    border: 1.5px solid #cbd5e1;
+    padding: 10px 14px;
+    transition: all 0.2s ease;
+    font-size: 14px;
+}
+
+.form-control:focus, .form-select:focus {
+    border-color: #C41E3A;
+    box-shadow: 0 0 0 3px rgba(196, 30, 58, 0.1);
+}
+
+/* Modal improvements */
+.modal-content {
+    border-radius: 16px;
+    border: none;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+.modal-header {
+    border-top-left-radius: 16px;
+    border-top-right-radius: 16px;
+}
+
+.modal-footer {
+    border-bottom-left-radius: 16px;
+    border-bottom-right-radius: 16px;
+}
+
+/* Loading spinner */
+._dash-loading-callback {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 10000;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+::-webkit-scrollbar-track {
+    background: #f1f5f9;
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: linear-gradient(135deg, #fecaca 0%, #fca5a5 100%);
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(135deg, #fca5a5 0%, #f87171 100%);
+}
+
+/* Alert styling */
+.alert {
+    border-radius: 10px;
+    border: none;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    font-weight: 500;
+}
+
+.alert-success {
+    background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+    color: #065f46;
+}
+
+.alert-danger {
+    background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+    color: #991b1b;
+}
+
+.alert-info {
+    background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+    color: #9B1829;
+}
+
+/* Page load animation */
+.table-responsive, .card {
+    animation: fadeIn 0.5s ease-out;
+}
+
+/* ============================================ */
+/* THERMAL PRINT TICKET STYLING */
+/* ============================================ */
+
+/* Print media query - only thermal print content when printing */
+@media print {
+    /* Hide everything except thermal print */
+    body * {
+        visibility: hidden;
+    }
+    
+    #thermal-print-content, #thermal-print-content * {
+        visibility: visible;
+    }
+    
+    #thermal-print-content {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+    }
+    
+    /* Remove borders and backgrounds for print */
+    .modal-content, .modal-body, .modal-footer {
+        border: none !important;
+        background: white !important;
+        box-shadow: none !important;
+    }
+    
+    /* Hide modal buttons during print */
+    .modal-footer {
+        display: none !important;
+    }
+    
+    /* Ensure thermal print fits on page */
+    @page {
+        size: 80mm auto;
+        margin: 5mm;
+    }
+}
+
+/* Thermal print on-screen styling */
+#thermal-print-content {
+    font-family: 'Courier New', monospace;
+    line-height: 1.4;
+}
+
+/* ============================================ */
+/* TRAIN MODELS TABLE ROW HOVER */
+/* ============================================ */
+.table-row-hover:hover {
+    background-color: #fef2f2 !important;
+    transform: scale(1.001);
+    box-shadow: 0 2px 8px rgba(196, 30, 58, 0.08);
+}
+
+.table-row-hover:hover button {
+    transform: scale(1.05);
+}
