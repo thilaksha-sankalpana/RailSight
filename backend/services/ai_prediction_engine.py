@@ -136,7 +136,8 @@ Remember: Total compartments must equal {total_compartments}
         route_id: str,
         train_id: str,
         target_date: date,
-        save_to_db: bool = True
+        save_to_db: bool = True,
+        force_regenerate: bool = False
     ) -> Dict[str, Any]:
         """
         Generate compartment prediction using RAG + LLM
@@ -147,12 +148,38 @@ Remember: Total compartments must equal {total_compartments}
             train_id: Operational train ID
             target_date: Date to predict for
             save_to_db: Whether to save prediction to database
+            force_regenerate: If True, regenerate even if prediction exists
         
         Returns:
             Dict with prediction results
         """
         start_time = datetime.now()
         logger.info(f"🎯 Starting prediction for {schedule_id} on {target_date}")
+        
+        # Check if prediction already exists (unless forced to regenerate)
+        if not force_regenerate:
+            existing_prediction = self.db.query(CompartmentPrediction).filter(
+                CompartmentPrediction.schedule_id == schedule_id,
+                CompartmentPrediction.schedule_date == target_date,
+                CompartmentPrediction.is_active == 1
+            ).first()
+            
+            if existing_prediction:
+                logger.info(f"✅ Prediction already exists (ID: {existing_prediction.id}). Returning cached prediction.")
+                return {
+                    "success": True,
+                    "prediction": {
+                        "prediction_id": existing_prediction.id,
+                        "predicted_first_class": existing_prediction.predicted_first_class,
+                        "predicted_second_class": existing_prediction.predicted_second_class,
+                        "predicted_third_class": existing_prediction.predicted_third_class,
+                        "expected_total_passengers": existing_prediction.expected_total_passengers,
+                        "confidence_score": float(existing_prediction.confidence_score) if existing_prediction.confidence_score else None,
+                        "reasoning": existing_prediction.reasoning
+                    },
+                    "execution_time_ms": 0,
+                    "cached": True
+                }
         
         try:
             # Step 1: Retrieve context using RAG

@@ -10,7 +10,7 @@ from config.settings import API_URL
 logger = logging.getLogger(__name__)
 
 
-def make_api_request(endpoint, token=None, method="GET", data=None, timeout=5):
+def make_api_request(endpoint, token=None, method="GET", data=None, timeout=15):
     """
     API request handler with proper error handling
 
@@ -19,10 +19,10 @@ def make_api_request(endpoint, token=None, method="GET", data=None, timeout=5):
         token: Authentication token dict with 'access_token' key
         method: HTTP method (GET, POST, PUT, PATCH, DELETE)
         data: Request payload for POST/PUT/PATCH
-        timeout: Request timeout in seconds
+        timeout: Request timeout in seconds (default: 15)
 
     Returns:
-        Response JSON data or None on error
+        Response JSON data or error dict on failure
     """
     try:
         headers = {}

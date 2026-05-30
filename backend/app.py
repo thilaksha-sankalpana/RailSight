@@ -560,12 +560,26 @@ async def delete_train(
 # ============= ROUTES =============
 @app.get("/routes", response_model=List[RouteResponse])
 async def get_routes(
+    search: Optional[str] = Query(None, description="Search routes by ID or name"),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, le=500),
     db: Session = Depends(get_db)
 ):
-    """Get all routes"""
-    routes = db.query(TrainRoute).offset(skip).limit(limit).all()
+    """Get all routes with optional search"""
+    query = db.query(TrainRoute)
+    
+    # Apply search filter if provided
+    if search:
+        search_pattern = f"%{search}%"
+        query = query.filter(
+            or_(
+                TrainRoute.route_id.ilike(search_pattern),
+                TrainRoute.route_name.ilike(search_pattern),
+                TrainRoute.route.ilike(search_pattern)
+            )
+        )
+    
+    routes = query.offset(skip).limit(limit).all()
     return routes
 
 @app.post("/routes", response_model=RouteResponse, status_code=status.HTTP_201_CREATED)
@@ -680,6 +694,88 @@ async def get_schedules(
         query = query.filter(day_column == True)
 
     schedules = query.order_by(TrainSchedule.train_schedule_id).offset(skip).limit(limit).all()
+    return schedules
+
+@app.get("/schedules/by-date")
+async def get_schedules_by_date(
+    schedule_date: date = Query(..., description="Filter by specific date"),
+    route_id: Optional[str] = Query(None, description="Filter by route"),
+    origin_station_id: Optional[str] = Query(None, description="Filter by origin station"),
+    destination_station_id: Optional[str] = Query(None, description="Filter by destination station"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(500, le=500),
+    db: Session = Depends(get_db)
+):
+    """Get train schedules for a specific date (used by Train Schedules tab)"""
+
+    # Get day of week column name
+    day_columns = {
+        0: TrainSchedule.monday,
+        1: TrainSchedule.tuesday,
+        2: TrainSchedule.wednesday,
+        3: TrainSchedule.thursday,
+        4: TrainSchedule.friday,
+        5: TrainSchedule.saturday,
+        6: TrainSchedule.sunday
+    }
+    day_column = day_columns[schedule_date.weekday()]
+
+    # Check if it's a special day
+    day_info = get_day_type(schedule_date)
+    is_poya = day_info.get("is_poya_day", False)
+    is_holiday = day_info.get("is_public_holiday", False)
+
+    # If both origin and destination are specified, we need to check intermediate stations
+    # Use TrainScheduleByStation table to find schedules that have this segment
+    if origin_station_id and destination_station_id:
+        # Get schedule IDs that have the specified origin->destination segment
+        segment_schedule_ids = db.query(TrainScheduleByStation.train_schedule_id).filter(
+            and_(
+                TrainScheduleByStation.origin_station_id == origin_station_id,
+                TrainScheduleByStation.destination_station_id == destination_station_id
+            )
+        ).distinct().all()
+
+        # Extract schedule IDs from tuples
+        valid_schedule_ids = [sid[0] for sid in segment_schedule_ids]
+
+        if not valid_schedule_ids:
+            # No schedules have this segment, return empty list
+            return []
+
+        # Base query filtered by schedule IDs
+        query = db.query(TrainSchedule).filter(TrainSchedule.train_schedule_id.in_(valid_schedule_ids))
+    else:
+        # Base query without segment filtering
+        query = db.query(TrainSchedule)
+
+        # Apply simple station filters (only for terminal stations)
+        if origin_station_id:
+            query = query.filter(TrainSchedule.origin_station_id == origin_station_id)
+
+        if destination_station_id:
+            query = query.filter(TrainSchedule.destination_station_id == destination_station_id)
+
+    # Filter by day of week or special days
+    day_filters = [day_column == True]
+    if is_poya:
+        day_filters.append(TrainSchedule.poya_day == True)
+    if is_holiday:
+        day_filters.append(TrainSchedule.holiday == True)
+
+    query = query.filter(or_(*day_filters))
+
+    # Filter by status (exclude cancelled and inactive)
+    query = query.filter(TrainSchedule.status.notin_([ScheduleStatus.Cancelled, ScheduleStatus.Inactive]))
+
+    # Apply route filter
+    if route_id:
+        query = query.filter(TrainSchedule.route_id == route_id)
+
+    # Execute query
+    schedules = query.order_by(TrainSchedule.origin_departure).offset(skip).limit(limit).all()
+
+    # Return schedules as list (same format as /schedules endpoint)
     return schedules
 
 @app.get("/schedules/available")
@@ -1644,8 +1740,8 @@ async def update_ticket(
 @app.get("/daily-schedules")
 async def get_daily_schedules(
     schedule_date: Optional[date] = Query(None, description="Filter by specific date"),
-    status: Optional[str] = Query(None, description="Filter by status"),
-    train_id: Optional[str] = Query(None, description="Filter by train"),
+    route_id: Optional[str] = Query(None, description="Filter by route"),
+    schedule_id: Optional[str] = Query(None, description="Filter by schedule ID"),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, le=500),
     db: Session = Depends(get_db)
@@ -1688,22 +1784,30 @@ async def get_daily_schedules(
     )
 
     # Apply additional filters
-    if status:
-        query = query.filter(TrainSchedule.status == ScheduleStatus[status])
-    if train_id:
-        query = query.filter(TrainSchedule.train_id == train_id)
+    if route_id:
+        query = query.filter(TrainSchedule.route_id == route_id)
+    if schedule_id:
+        query = query.filter(TrainSchedule.train_schedule_id == schedule_id)
 
     schedules = query.order_by(TrainSchedule.origin_departure).offset(skip).limit(limit).all()
+
+    # OPTIMIZATION: Fetch all predictions for these schedules in ONE query
+    # This prevents N+1 query problem
+    schedule_ids = [s.train_schedule_id for s in schedules]
+    predictions_query = db.query(CompartmentPrediction).filter(
+        CompartmentPrediction.schedule_id.in_(schedule_ids),
+        CompartmentPrediction.schedule_date == target_date,
+        CompartmentPrediction.is_active == 1
+    ).all()
+    
+    # Create a lookup dict for O(1) access
+    predictions_by_schedule = {p.schedule_id: p for p in predictions_query}
 
     # Build response with additional date context and AI predictions
     schedules_with_predictions = []
     for s in schedules:
-        # Get AI prediction for this schedule and date
-        prediction = db.query(CompartmentPrediction).filter(
-            CompartmentPrediction.schedule_id == s.train_schedule_id,
-            CompartmentPrediction.schedule_date == target_date,
-            CompartmentPrediction.is_active == 1
-        ).first()
+        # Get prediction from our pre-fetched dict (fast!)
+        prediction = predictions_by_schedule.get(s.train_schedule_id)
         
         schedule_data = {
             "train_schedule_id": s.train_schedule_id,

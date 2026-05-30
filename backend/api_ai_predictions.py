@@ -23,6 +23,7 @@ router = APIRouter(prefix="/api/ai", tags=["AI Predictions"])
 class SimplePredictionRequest(BaseModel):
     schedule_id: str
     prediction_date: str  # Format: YYYY-MM-DD
+    force_regenerate: bool = False  # If True, delete existing prediction and regenerate
 
 
 # =====================================================
@@ -41,6 +42,7 @@ class PredictionResponse(BaseModel):
     confidence_score: Optional[float] = None
     reasoning: Optional[str] = None
     execution_time_ms: Optional[int] = None
+    cached: bool = False  # True if prediction was retrieved from cache
 
 class OllamaStatusResponse(BaseModel):
     is_running: bool
@@ -125,7 +127,8 @@ def generate_prediction_simple(
             route_id=route_id,
             train_id=train_id,
             target_date=prediction_date,
-            save_to_db=True
+            save_to_db=True,
+            force_regenerate=request.force_regenerate
         )
         
         if not result["success"]:
@@ -147,7 +150,8 @@ def generate_prediction_simple(
             total_compartments=pred["predicted_first_class"] + pred["predicted_second_class"] + pred["predicted_third_class"],
             confidence_score=pred.get("confidence_score"),
             reasoning=pred.get("reasoning"),
-            execution_time_ms=result.get("execution_time_ms")
+            execution_time_ms=result.get("execution_time_ms"),
+            cached=result.get("cached", False)
         )
     
     except ValueError as e:

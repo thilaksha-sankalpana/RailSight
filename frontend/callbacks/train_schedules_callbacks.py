@@ -83,32 +83,12 @@ def generate_next_schedule_id(token):
         return "SCH9999"  # Fallback
 
 
-def get_day_info_from_api(target_date):
+def get_day_of_week(target_date):
     """
-    Get day information including poya day and holiday status
-    Uses backend's calendar service via daily-schedules endpoint
+    Get day of week for a given date
+    Backend handles poya/holiday filtering via the calendar service
     """
-    try:
-        # Use the daily-schedules endpoint which includes day info
-        response = make_api_request(f"/daily-schedules?schedule_date={target_date}", token=None, timeout=5)
-        if response and isinstance(response, dict):
-            return {
-                "day_of_week": response.get("day_of_week", target_date.strftime("%A")).lower(),
-                "is_poya_day": response.get("is_poya_day", False),
-                "is_public_holiday": response.get("is_holiday", False),
-                "holiday_info": []
-            }
-    except Exception as e:
-        logger.warning(f"Could not fetch day info from backend: {e}")
-    
-    # Fallback to local day calculation
-    day_name = target_date.strftime("%A").lower()
-    return {
-        "day_of_week": day_name,
-        "is_poya_day": False,
-        "is_public_holiday": False,
-        "holiday_info": []
-    }
+    return target_date.strftime("%A").lower()
 
 
 def register(app):
@@ -131,7 +111,7 @@ def register(app):
                             filter_date, filter_origin, filter_destination, token):
         """Load and display train schedules table filtered by date and stations"""
         if pathname != "/schedules" or not token:
-            return html.Div([
+            return (html.Div([
                 html.Div([
                     html.I(className="fas fa-spinner fa-spin", style={
                         'fontSize': '32px',
@@ -147,7 +127,7 @@ def register(app):
                     'textAlign': 'center',
                     'padding': '60px 20px'
                 })
-            ]), "Loading..."
+            ]), "Loading...")
 
         # Determine which date to use
         ctx = callback_context
@@ -164,34 +144,41 @@ def register(app):
         else:
             target_date = date.today()
 
-        # Get day information (day of week, poya, holiday)
-        day_info = get_day_info_from_api(target_date)
-        day_of_week = day_info.get("day_of_week", target_date.strftime("%A").lower())
-        is_poya = day_info.get("is_poya_day", False)
-        is_holiday = day_info.get("is_public_holiday", False)
-        
-        logger.info(f"Loading schedules for {target_date} ({day_of_week}) - Poya: {is_poya}, Holiday: {is_holiday}")
+        # Get day of week (backend handles poya/holiday filtering)
+        day_of_week = get_day_of_week(target_date)
 
-        # Fetch ALL schedules from backend (we'll filter by day on client side)
-        schedules = make_api_request("/schedules?limit=500", token=token)
-        logger.info(f"Fetched {len(schedules) if schedules else 0} total schedules from backend")
+        logger.info(f"Loading schedules for {target_date} ({day_of_week})")
 
-        if not schedules or not isinstance(schedules, list):
-            return html.Div([
+        # Use the schedules/by-date endpoint which handles day/poya/holiday filtering on backend
+        # This is the dedicated endpoint for Train Schedules tab
+        api_url = f"/schedules/by-date?schedule_date={target_date}&limit=500"
+
+        # Add station filters if provided
+        if filter_origin:
+            api_url += f"&origin_station_id={filter_origin}"
+        if filter_destination:
+            api_url += f"&destination_station_id={filter_destination}"
+
+        schedules = make_api_request(api_url, token=token, timeout=30)
+
+        # Check if response is invalid (None or not a list)
+        if schedules is None or not isinstance(schedules, list):
+            logger.error(f"Invalid API response - expected list, got {type(schedules)}")
+            return (html.Div([
                 html.Div([
-                    html.I(className="fas fa-calendar-alt", style={
+                    html.I(className="fas fa-exclamation-triangle", style={
                         'fontSize': '64px',
-                        'color': COLORS['text_secondary'],
-                        'opacity': '0.3',
+                        'color': COLORS['danger'],
+                        'opacity': '0.5',
                         'marginBottom': '20px'
                     }),
-                    html.H5("No Schedules Found", style={
+                    html.H5("Error Loading Schedules", style={
                         'color': COLORS['text_primary'],
                         'fontWeight': '700',
                         'marginBottom': '8px',
                         'fontSize': '20px'
                     }),
-                    html.P("No train schedules are configured in the system", style={
+                    html.P("Failed to connect to the server. Please try again.", style={
                         'color': COLORS['text_secondary'],
                         'fontSize': '15px',
                         'marginBottom': '24px'
@@ -200,61 +187,25 @@ def register(app):
                     'textAlign': 'center',
                     'padding': '80px 20px'
                 })
-            ])
+            ]), "0")
 
-        # Filter schedules by day of week, poya, and holiday
-        filtered_schedules = []
-        for schedule in schedules:
-            # Check if schedule operates on this day
-            operates_today = False
-            
-            # Check regular day of week
-            day_value = schedule.get(day_of_week, False)
-            logger.debug(f"Schedule {schedule.get('train_schedule_id')}: {day_of_week}={day_value} (type: {type(day_value)})")
-            if day_value:
-                operates_today = True
-            
-            # Check poya day
-            if is_poya and schedule.get('poya_day', False):
-                operates_today = True
-            
-            # Check holiday
-            if is_holiday and schedule.get('holiday', False):
-                operates_today = True
-            
-            if operates_today:
-                filtered_schedules.append(schedule)
-        
-        logger.info(f"Filtered to {len(filtered_schedules)} schedules for {day_of_week}")
-
-        # Apply station filters if provided
-        if filter_origin or filter_destination:
-            station_filtered = []
-            for schedule in filtered_schedules:
-                match = True
-                
-                if filter_origin and schedule.get('origin_station_id') != filter_origin:
-                    match = False
-                
-                if filter_destination and schedule.get('destination_station_id') != filter_destination:
-                    match = False
-                
-                if match:
-                    station_filtered.append(schedule)
-            
-            filtered_schedules = station_filtered
-            logger.info(f"After station filtering: {len(filtered_schedules)} schedules")
-
-        logger.info(f"Final filtered count: {len(filtered_schedules)} schedules to display")
+        # Backend already filtered by date, poya, holiday, and stations
+        # So we can use the schedules directly
+        filtered_schedules = schedules
+        logger.info(f"Received {len(filtered_schedules)} schedules from backend for {target_date}")
 
         if not filtered_schedules:
             day_label = day_of_week.capitalize()
-            if is_poya:
-                day_label += " (Poya Day)"
-            if is_holiday:
-                day_label += " (Public Holiday)"
-            
-            return html.Div([
+
+            # Determine the message based on whether filters were applied
+            if filter_origin or filter_destination:
+                message_title = f"No Schedules Match Your Filters"
+                message_body = f"No trains found on {target_date.strftime('%B %d, %Y')} for the selected route"
+            else:
+                message_title = f"No Schedules for {day_label}"
+                message_body = f"No trains are scheduled to operate on {target_date.strftime('%B %d, %Y')}"
+
+            return (html.Div([
                 html.Div([
                     html.I(className="fas fa-calendar-times", style={
                         'fontSize': '64px',
@@ -262,13 +213,13 @@ def register(app):
                         'opacity': '0.3',
                         'marginBottom': '20px'
                     }),
-                    html.H5(f"No Schedules for {day_label}", style={
+                    html.H5(message_title, style={
                         'color': COLORS['text_primary'],
                         'fontWeight': '700',
                         'marginBottom': '8px',
                         'fontSize': '20px'
                     }),
-                    html.P(f"No trains are scheduled to operate on {target_date.strftime('%B %d, %Y')}", style={
+                    html.P(message_body, style={
                         'color': COLORS['text_secondary'],
                         'fontSize': '15px',
                         'marginBottom': '16px'
@@ -281,12 +232,10 @@ def register(app):
                     'textAlign': 'center',
                     'padding': '80px 20px'
                 })
-            ]), "0 Schedules"
+            ]), "0")
 
         # Create modern table rows
         table_rows = []
-        
-        logger.info(f"Starting to build table rows for {len(filtered_schedules)} schedules")
 
         for idx, schedule in enumerate(filtered_schedules):
             row_style = {
@@ -485,25 +434,8 @@ def register(app):
                 }, className='schedule-row')
             )
 
-        # Create day info banner
+        # Create day info banner - simpler version since backend handles special days
         day_label = day_of_week.capitalize()
-        day_badges = []
-        
-        if is_poya:
-            day_badges.append(
-                dbc.Badge([
-                    html.I(className="fas fa-moon", style={'marginRight': '6px'}),
-                    "Poya Day"
-                ], color="warning", className="me-2", style={'fontSize': '12px', 'padding': '6px 12px'})
-            )
-        
-        if is_holiday:
-            day_badges.append(
-                dbc.Badge([
-                    html.I(className="fas fa-calendar-check", style={'marginRight': '6px'}),
-                    "Public Holiday"
-                ], color="info", className="me-2", style={'fontSize': '12px', 'padding': '6px 12px'})
-            )
 
         # Summary header with day info
         summary = html.Div([
@@ -519,8 +451,7 @@ def register(app):
                         'color': COLORS['text_primary'],
                         'fontWeight': '600',
                         'marginRight': '12px'
-                    }),
-                    *day_badges
+                    })
                 ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '8px'}),
                 html.Div([
                     html.I(className="fas fa-info-circle", style={
@@ -541,8 +472,6 @@ def register(app):
             'borderBottom': f'2px solid {COLORS["border"]}',
             'borderRadius': '12px 12px 0 0'
         })
-
-        logger.info(f"About to return table with {len(table_rows)} rows")
 
         # Create count badge text
         count_text = f"{len(filtered_schedules)} Schedule{'s' if len(filtered_schedules) != 1 else ''}"
